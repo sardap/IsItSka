@@ -1,0 +1,10 @@
+version: '3'
+services:
+  redis:
+    container_name: redis
+    image: "redis"
+    entrypoint: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/:/var/lib/redis

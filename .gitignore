@@ -1,0 +1,13 @@
+.env
+db.json
+
+.sign/
+
+Debug/
+
+__pycache__/
+
+clf/
+
+tree_ska
+tree_ska.pdf
