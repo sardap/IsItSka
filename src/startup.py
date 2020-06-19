@@ -7,6 +7,8 @@ import itertools
 import hashlib
 import re
 import random
+import redis
+import json
 
 from sklearn.model_selection import train_test_split # Import train_test_split function
 from sklearn.metrics import accuracy_score
@@ -58,7 +60,19 @@ def print_progress_bar(iteration, total, prefix = '', suffix = '', decimals = 1,
     if iteration == total: 
         print()
 
-def transform(complete_track, key, other_key, n, result):
+_cache = {}
+
+def get_feature_key(fun, key, other_key, n, id):
+	return "{}{}{}{}".format(key, other_key, n, id)
+
+def transform(complete_track, key, other_key, n, redis_connection):
+	feature_key = get_feature_key("transform", key, other_key, n, complete_track["id"])
+	# if redis_connection != None and redis_connection.exists(feature_key):
+	# 	return json.loads(redis_connection.get(feature_key))
+	if feature_key in _cache:
+		return _cache[feature_key]
+
+	result = {}
 	for i in range(0, n):
 		if i < len(complete_track["analysis"][key]):
 			val = float(complete_track["analysis"][key][i][other_key])
@@ -67,7 +81,20 @@ def transform(complete_track, key, other_key, n, result):
 
 		result["{}{}{}".format(i, key, other_key)] = val
 
-def avg_value(complete_track, key, other_key, n, result):
+	_cache[feature_key] = result
+	# if redis_connection != None:
+	# 	redis_connection.set(feature_key, json.dumps(result))
+	return result
+
+def avg_value(complete_track, key, other_key, n, redis_connection):
+	feature_key = get_feature_key("transform", key, other_key, n, complete_track["id"])
+	# if redis_connection != None and redis_connection.exists(feature_key):
+	# 	return json.loads(redis_connection.get(feature_key))
+	if feature_key in _cache:
+		return _cache[feature_key]
+
+	result = {}
+
 	for i in range(0, n):
 		if i < len(complete_track["analysis"][key]):
 			val = sum(j for j in complete_track["analysis"][key][i][other_key]) / len(complete_track["analysis"][key][i][other_key])
@@ -76,11 +103,17 @@ def avg_value(complete_track, key, other_key, n, result):
 	
 		result["{}{}{}".format(i, key, other_key)] = val
 
+	# if redis_connection != None:
+	# 	redis_connection.set(feature_key, json.dumps(result))
+	_cache[feature_key] = result
+	return result
+
 def get_ml_features(
 	complete_track,
 	feature_set,
 	length_dict,
-	ska_tracks
+	ska_tracks=None,
+	redis_connection=None,
 ):
 	result = {}
 
@@ -94,7 +127,10 @@ def get_ml_features(
 		key = i["key"]
 		sec = i["sec"]
 		n = length_dict[key]
-		fun_res = i["fun"](complete_track, key, sec, n, result)
+		fun_res = i["fun"](complete_track, key, sec, n, redis_connection)
+
+		for key in fun_res.keys():
+			result[key] = fun_res[key]
 		
 	return result
 
@@ -110,7 +146,7 @@ def gen_classifier(target_var="", df={}, features=[]):
 	x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=1) # 70% training and 30% test
 
 	clf = tree.DecisionTreeClassifier(
-		max_depth=5
+		max_depth=20
 	)
 	clf.fit(x_train, y_train)
 
@@ -136,9 +172,9 @@ def is_it_ska(
 	}
 
 	ml_set = get_ml_features(
-		track_complete,
-		length_dict,
-		feature_set
+		complete_track=track_complete,
+		feature_set=feature_set,
+		length_dict=length_dict
 	)
 
 	cols = list(ml_set.keys())
@@ -195,23 +231,25 @@ def create_clf(
 	tracks_complete,
 	ska_tracks,
 	feature_set,
-	length_dict
+	length_dict,
+	redis_connection
 ):
 	def process_complete_track(i):
 		return get_ml_features(
 			i,
 			list(feature_set),
 			length_dict,
-			ska_tracks=ska_tracks
+			ska_tracks=ska_tracks,
+			redis_connection=redis_connection
 		)
 
-	# ml_set = []
-	# for i in tracks_complete:
-	# 	ml_set.append(
-	# 		process_complete_track(i)
-	# 	)
-	num_cores = int(multiprocessing.cpu_count())
-	ml_set = Parallel(n_jobs=num_cores)(delayed(process_complete_track)(i) for i in tracks_complete)
+	ml_set = []
+	for i in tracks_complete:
+		ml_set.append(
+			process_complete_track(i)
+		)
+	# num_cores = int(multiprocessing.cpu_count())
+	# ml_set = Parallel(n_jobs=num_cores)(delayed(process_complete_track)(i) for i in tracks_complete)
 
 	cols = list(ml_set[0].keys())
 	df = pd.DataFrame(ml_set, columns=cols)
@@ -274,12 +312,7 @@ def recreate_training_playlist():
 		tracks=ska_tracks
 	)
 
-def main():
-	set_login(
-		api_auth=API_AUTH,
-		refresh_token=REFRESH_TOKEN,
-	)
-
+def create_all_clf():
 	feature_sets_complete = [
  		{ "fun" : transform, "key" : "bars", "sec" : "duration"},
  		{ "fun" : transform, "key" : "beats", "sec" : "duration"},
@@ -305,8 +338,44 @@ def main():
 			list(itertools.combinations(feature_sets_complete, i))
 		)
 
-	random.shuffle(feature_sets)
-	
+	# to_remove = []
+	# for feature_set in feature_sets:
+	# 	pattern = re.compile(
+	# 		"\\d\\d\\d_clf_{}.bin".format(
+	# 			get_feature_set_hash(feature_set)
+	# 		)
+	# 	)
+
+	# 	file_exists = [0 for filename in os.listdir("./clf") if pattern.match(filename)]
+
+	# 	if len(feature_set) == 0 or len(file_exists) > 0:
+	# 		to_remove.append(
+	# 			feature_set
+	# 		)
+
+	# for i in to_remove:
+	# 	feature_sets.remove(i)
+
+	# def process(feature_set):
+	# 	create_clf(
+	# 		ska_tracks=ska_tracks,
+	# 		tracks_complete=tracks_complete,
+	# 		feature_set=feature_set,
+	# 		length_dict=length_dict
+	# 	)
+
+	# num_cores = int(multiprocessing.cpu_count())
+	# Parallel(n_jobs=num_cores)(delayed(process)(i) for i in feature_sets)
+
+	# return
+
+	redis_connection = redis.Redis(
+		host='localhost',
+		port=6379,
+		db=0
+	)
+
+	delta_histroy = []
 	for feature_set in feature_sets:
 		start_time = datetime.utcnow()
 		pattern = re.compile(
@@ -316,46 +385,84 @@ def main():
 		)
 
 		file_exists = [0 for filename in os.listdir("./clf") if pattern.match(filename)]
-
+		acc = 0.0
 		if(
 			len(feature_set) > 0 and
 			len(file_exists) == 0
 		):
-			create_clf(
+			acc = create_clf(
 				ska_tracks=ska_tracks,
 				tracks_complete=tracks_complete,
 				feature_set=feature_set,
-				length_dict=length_dict
+				length_dict=length_dict,
+				redis_connection=redis_connection
 			)
+
+		delta = (datetime.utcnow() - start_time).total_seconds()
+		delta_histroy.append(delta)
+		if len(delta_histroy) > 0:
+			delta_avg = sum(delta_histroy) / len(delta_histroy)
 
 		print_progress_bar(
 			feature_sets.index(feature_set),
 			len(feature_sets) + 1,
 			prefix="Creating ml sets",
-			suffix="took {:.2f} secs".format((datetime.utcnow() - start_time).total_seconds())
+			suffix="acc {:.2f} took {:.2f} secs avg {:.2f}".format(acc, delta, delta_avg)
 		)
 
 	print_progress_bar(feature_sets.index(feature_set), len(feature_sets) + 1, prefix="Creating ml sets")
 
-	return 
-	clfInfo = pickle.load(open('clf.bin', 'rb'))
-	track_id = "1ccFnIocW7FZ546v5cVqta"
+def get_top_x_clf(x):
+	ratings = []
 
-	if track_id in get_ska_tracks():
-		raise Exception("Already Learned about this one")
+	target_floder = "./clf"
 
-	ska_prob = list(is_it_ska(
-		clf=clfInfo.clf,
-		length_dict=clfInfo.length_set,
-		feature_set=clfInfo.feature_set,
-		track_id=track_id,
-		n_beats=clfInfo.n_beats,
-		n_sections=clfInfo.n_sections,
-		n_segments=clfInfo.n_segments,
-		n_tatums=clfInfo.n_tatums
-	))[0]
+	for filename in os.listdir(target_floder):
+		ratings.append({
+			"rating" : int(filename[:3]),
+			"filename" : "{}/{}".format(target_floder, filename)
+		})
 
-	track_info = get_track(track_id)
-	print("prob of {} being ska is {:.2f}%".format(track_info["name"], ska_prob[1] * 100))
+	ratings.sort(key=lambda x: x["rating"], reverse=True)
+
+	return ratings[:min(x, len(ratings))]
+
+def main():
+	set_login(
+		api_auth=API_AUTH,
+		refresh_token=REFRESH_TOKEN,
+	)
+
+	create_all_clf()
+
+	clf_to_test = get_top_x_clf(5)
+
+	ska_tracks = get_ska_tracks()
+	tracks_complete, ska_tracks, length_dict = get_track_data()
+
+	for i in clf_to_test:
+		clfInfo = pickle.load(open(i["filename"], 'rb'))
+		track_id = "6UNf12sZXLcvQUbNpyfKHd"
+
+		if track_id in ska_tracks:
+			raise Exception("Already Learned about this one")
+
+		# create_clf(
+		# 	tracks_complete=tracks_complete,
+		# 	ska_tracks=ska_tracks,
+		# 	feature_set=clfInfo.feature_set,
+		# 	length_dict=clfInfo.length_dict,
+		# 	redis_connection=None
+		# )
+
+		ska_prob = list(is_it_ska(
+			clf=clfInfo.clf,
+			length_dict=clfInfo.length_dict,
+			feature_set=clfInfo.feature_set,
+			track_id=track_id
+		))[0]
+
+		track_info = get_track(track_id)
+		print("prob of {} being ska is {:.2f}%".format(track_info["name"], ska_prob[1] * 100))
 
 main()

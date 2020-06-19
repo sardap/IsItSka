@@ -8,6 +8,7 @@ Debug/
 __pycache__/
 
 clf/
+clf_old87/
 
 tree_ska
 tree_ska.pdf

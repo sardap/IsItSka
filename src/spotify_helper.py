@@ -278,7 +278,7 @@ def get_features_for_tracks(tracks=[]):
 
 	for i in range(0, len(tracks)):
 		print_progress_bar(i, len(tracks), prefix="Getting track features")
-		result.append(get_track_features(i))
+		result.append(get_track_features(tracks[i]))
 
 	print_progress_bar(i, len(tracks), prefix="Getting track features")
 	return result
