@@ -1,0 +1,24 @@
+.checkerboard-background-lg {
+	background-color: #FFF;
+	background-size: 50px 50px;
+	background-position: 0 0, 25px 25px;
+	background-image: linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%, black),
+					  linear-gradient(45deg, black 25%, transparent 25%, transparent 75%, black 75%, black);
+	
+}
+
+.mainbody{
+    position: absolute;
+    top: 40px; /* Header Height */
+    bottom: 20px; /* Footer Height */
+    width: 100%;
+}
+
+.vertical-center {
+	min-height: 100%;  /* Fallback for browsers do NOT support vh unit */
+	min-height: 100vh; /* These two lines are counted as one :-)       */
+  
+	display: flex;
+	align-items: center;
+  }
+  
