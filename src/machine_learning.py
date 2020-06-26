@@ -21,7 +21,7 @@ from datetime import datetime
 from multiprocessing import Process, JoinableQueue
 from threading import Semaphore, Thread
 
-from env import API_AUTH, REFRESH_TOKEN, SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH
+from env import API_AUTH, REFRESH_TOKEN, SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH, REDIS_DB, REDIS_IP, REDIS_PORT
 from spotify_helper import get_analysis_for_tracks, get_access_token, get_playlist_tracks, get_genres_for_track, set_login, get_analysis_for_track, get_track, add_tracks_to_playlist, get_playlist_by_name, remove_tracks_from_playlist
 
 
@@ -391,9 +391,9 @@ def create_clf_worker(
 	saver_work_sem
 ):
 	redis_connection = redis.Redis(
-		host='localhost',
-		port=6379,
-		db=0
+		host=REDIS_IP,
+		port=REDIS_PORT,
+		db=REDIS_DB
 	)
 
 	while True:
@@ -639,9 +639,9 @@ def create_all_clf():
 	# return
 
 	redis_connection = redis.Redis(
-		host='localhost',
-		port=6379,
-		db=0
+		host=REDIS_IP,
+		port=REDIS_PORT,
+		db=REDIS_DB
 	)
 
 	delta_histroy = []

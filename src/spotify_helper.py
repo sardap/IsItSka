@@ -16,7 +16,7 @@ from os import path
 from threading import BoundedSemaphore
 from joblib import Parallel, delayed
 
-from env import API_AUTH, REFRESH_TOKEN
+from env import API_AUTH, REFRESH_TOKEN, REDIS_IP, REDIS_PORT, REDIS_DB
 
 DEFAULT_BACKOFF = 1
 POST = "POST"
@@ -65,9 +65,9 @@ def init_cache():
 	global _r
 
 	_r = redis.Redis(
-		host='localhost',
-		port=6379,
-		db=0
+		host=REDIS_IP,
+		port=REDIS_PORT,
+		db=REDIS_DB
 	)
 
 def set_login(api_auth=None, refresh_token=None):
@@ -208,10 +208,13 @@ def get_access_token_request(api_auth, refresh_token):
 		'Authorization': 'Basic %s' % api_auth, 
 		'Content-Type': 'application/x-www-form-urlencoded'
 	}
-
 	response = make_request(url, method=POST, headers=headers)
 
 	response_json = json.loads(response.text)
+
+	if "expires_in" not in response_json:
+		print("api_auth {} refresh_token {}".format(api_auth, refresh_token))
+		print("Error getting Spotify access token only found " + json.dumps(response_json))
 
 	expire_delta = timedelta(seconds=response_json["expires_in"] - 10)
 	expire_time = datetime.utcnow() +  expire_delta
@@ -438,8 +441,6 @@ def remove_track_from_playlist(playlist_id, track_id):
 		playlist_id=playlist_id,
 		tracks=[track_id]
 	)
-
-
 
 init_cache()
 

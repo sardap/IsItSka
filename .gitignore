@@ -17,3 +17,7 @@ tree_ska
 tree_ska.pdf
 
 data/
+
+docker.env
+
+docker-compose.yaml

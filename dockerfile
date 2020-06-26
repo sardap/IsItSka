@@ -8,26 +8,28 @@ COPY ./frontend .
 RUN yarn build
 
 # Backend
-FROM ubuntu:16.04
+FROM ubuntu:latest
 RUN apt-get update -y
 # Python stuff
 RUN apt-get install -y python3-pip python3-dev
-RUN pip3 install --upgrade pip
 
 WORKDIR /app
-COPY ./backend/requirements.txt requirements.txt
+COPY ./requirements.txt requirements.txt
+
+RUN apt-get upgrade -y
 
 RUN pip3 install -r requirements.txt
 
-# React stuff
-COPY ./backend /app
-
-ENV STATIC_FILE_PATH "/frontend"
-ENV SERVER_PORT=80
-
-EXPOSE 80
+RUN mkdir /app/clf
+ENV CLF_FOLDER_PATH "/app/clf"
 
 COPY --from=builder /app/build /frontend
 
-ENTRYPOINT [ "python3" ]
-CMD [ "startup.py" ]
+COPY ./src /app
+
+ENV STATIC_FILE_PATH "/frontend"
+ENV PORT 80
+
+EXPOSE 80
+
+CMD [ "python3", "startup.py" ]

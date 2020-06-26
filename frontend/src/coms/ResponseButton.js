@@ -1,5 +1,4 @@
 import React from 'react';
-import FormGroup from 'react-bootstrap/FormGroup';
 import '../style/App.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -29,7 +28,7 @@ class ResponseButton extends React.Component {
 		return (
 			<div className="text-center">
 				<form>
-					<FormGroup>
+					<div class="form-group">
 						<button 
 							class={"text-center border border-" + this.color + " btn btn-" + this.color}
 							type="button" 
@@ -39,7 +38,7 @@ class ResponseButton extends React.Component {
 									{this.text}
 								</div>
 						</button>
-					</FormGroup>
+					</div>
 				</form>
 			</div>
 		)

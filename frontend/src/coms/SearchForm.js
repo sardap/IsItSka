@@ -1,5 +1,4 @@
 import React from 'react';
-import FormGroup from 'react-bootstrap/FormGroup';
 import '../style/App.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
@@ -62,7 +61,7 @@ class SearchForm extends React.Component {
 								/>
 						</div>
 					</div>
-					<FormGroup>
+					<div class="form-group">
 						<button 
 							class={"border border-info btn btn-lg btn-light checkerboard-background-lg p-4 rounded"}
 							type="button" 
@@ -73,7 +72,7 @@ class SearchForm extends React.Component {
 									{this.state.button_text}
 								</div>
 						</button>
-					</FormGroup>
+					</div>
 				</form>
 			</div>
 		)

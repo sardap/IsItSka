@@ -1,10 +1,8 @@
 import redis
 import os
 import base64
-from binascii import hexlify
 
 from threading import Thread, BoundedSemaphore
-from waitress import serve
 from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file, make_response, send_from_directory
 from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError
@@ -12,7 +10,7 @@ from wtforms.validators import DataRequired, ValidationError
 from spotify_helper import find_track
 from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf
 from track_update import track_updater_worker, add_track_update
-from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN
+from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
 
@@ -200,11 +198,16 @@ def default_path_endpoint(path):
 		return send_from_directory(app.static_folder, 'index.html')
 
 def main():
+	print("starting server")
 	# create_fresh_clf()
 	# return
+	print("Loading classfiers")
 	load_clfs()
+	print("starting Track workers")
 	Thread(target=track_updater_worker).start()
-	serve(app, host="0.0.0.0", port=7000)
+	print("starting webserver")
+	app.run(host="0.0.0.0", port=PORT, threaded=True)
+	# serve(app, host="0.0.0.0", port=PORT)
 
 if __name__ == "__main__":
 	main()
