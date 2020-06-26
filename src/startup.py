@@ -1,468 +1,210 @@
-import os
-import multiprocessing
-import graphviz
-import pickle
-import io
-import itertools
-import hashlib
-import re
-import random
 import redis
-import json
+import os
+import base64
+from binascii import hexlify
 
-from sklearn.model_selection import train_test_split # Import train_test_split function
-from sklearn.metrics import accuracy_score
-from sklearn import metrics, tree
-import pandas as pd
-import numpy as np
-from joblib import Parallel, delayed
-from datetime import datetime
+from threading import Thread, BoundedSemaphore
+from waitress import serve
+from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file, make_response, send_from_directory
+from wtforms import Form, IntegerField, StringField, BooleanField
+from wtforms.validators import DataRequired, ValidationError
 
-from env import API_AUTH, REFRESH_TOKEN, SOURCE_PLAYLIST, SKA_PLAYLIST
-from spotify_helper import get_analysis_for_tracks, get_access_token, get_playlist_tracks, get_genres_for_track, set_login, get_analysis_for_track, get_track, add_tracks_to_playlist, get_playlist_by_name
+from spotify_helper import find_track
+from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf
+from track_update import track_updater_worker, add_track_update
+from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN
 
+app = Flask(__name__, static_folder=STATIC_FILE_PATH)
 
-os.environ["PATH"] += os.pathsep + "C:\\Program Files (x86)\\Graphviz2.38\\bin\\"
+def validate_track_name(form, field):
+	if(len(field.data) == 0):
+		raise ValidationError('invalid name')
 
-MIN_CONFIDENC1E = 0.7
-
-FEATURES = [
-	"beats"
-]
-
-class ClfInfo():
-	clf = None
-	n_beats = None
-	n_sections = None
-	n_segments = None
-	n_tatums = None
-	feature_set = None
-	length_dict = None
-
-def print_progress_bar(iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
-    """
-    Call in a loop to create terminal progress bar
-    @params:
-        iteration   - Required  : current iteration (Int)
-        total       - Required  : total iterations (Int)
-        prefix      - Optional  : prefix string (Str)
-        suffix      - Optional  : suffix string (Str)
-        decimals    - Optional  : positive number of decimals in percent complete (Int)
-        length      - Optional  : character length of bar (Int)
-        fill        - Optional  : bar fill character (Str)
-        printEnd    - Optional  : end character (e.g. "\r", "\r\n") (Str)
-    """
-    percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
-    filledLength = int(length * iteration // total)
-    bar = fill * filledLength + '-' * (length - filledLength)
-    print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = printEnd)
-    # Print New Line on Complete
-    if iteration == total: 
-        print()
-
-_cache = {}
-
-def get_feature_key(fun, key, other_key, n, id):
-	return "{}{}{}{}".format(key, other_key, n, id)
-
-def transform(complete_track, key, other_key, n, redis_connection):
-	feature_key = get_feature_key("transform", key, other_key, n, complete_track["id"])
-	# if redis_connection != None and redis_connection.exists(feature_key):
-	# 	return json.loads(redis_connection.get(feature_key))
-	if feature_key in _cache:
-		return _cache[feature_key]
-
-	result = {}
-	for i in range(0, n):
-		if i < len(complete_track["analysis"][key]):
-			val = float(complete_track["analysis"][key][i][other_key])
-		else:
-			val = float(-1)
-
-		result["{}{}{}".format(i, key, other_key)] = val
-
-	_cache[feature_key] = result
-	# if redis_connection != None:
-	# 	redis_connection.set(feature_key, json.dumps(result))
-	return result
-
-def avg_value(complete_track, key, other_key, n, redis_connection):
-	feature_key = get_feature_key("transform", key, other_key, n, complete_track["id"])
-	# if redis_connection != None and redis_connection.exists(feature_key):
-	# 	return json.loads(redis_connection.get(feature_key))
-	if feature_key in _cache:
-		return _cache[feature_key]
-
-	result = {}
-
-	for i in range(0, n):
-		if i < len(complete_track["analysis"][key]):
-			val = sum(j for j in complete_track["analysis"][key][i][other_key]) / len(complete_track["analysis"][key][i][other_key])
-		else:
-			val = float(-1)
-	
-		result["{}{}{}".format(i, key, other_key)] = val
-
-	# if redis_connection != None:
-	# 	redis_connection.set(feature_key, json.dumps(result))
-	_cache[feature_key] = result
-	return result
-
-def get_ml_features(
-	complete_track,
-	feature_set,
-	length_dict,
-	ska_tracks=None,
-	redis_connection=None,
-):
-	result = {}
-
-	if ska_tracks != None:
-		if complete_track["id"] in ska_tracks:
-			result["ska"] = float(True)
-		else:
-			result["ska"] = float(False)
-	
-	for i in feature_set:
-		key = i["key"]
-		sec = i["sec"]
-		n = length_dict[key]
-		fun_res = i["fun"](complete_track, key, sec, n, redis_connection)
-
-		for key in fun_res.keys():
-			result[key] = fun_res[key]
-		
-	return result
-
-def get_ska_tracks():
-	return get_playlist_tracks(
-		play_name=SKA_PLAYLIST
+class SkaProbForm(Form):
+	track_name = StringField(
+		"track_name",
+		[
+			DataRequired(),
+			validate_track_name
+		]
 	)
 
-def gen_classifier(target_var="", df={}, features=[]):
-	x = df[features] # Features
-	y = df[target_var] # Target variable
-
-	x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=1) # 70% training and 30% test
-
-	clf = tree.DecisionTreeClassifier(
-		max_depth=20
+class SkaCorrectionForm(Form):
+	ska = BooleanField(
+		"ska",
+		[
+		]
 	)
-	clf.fit(x_train, y_train)
+	track_id = StringField(
+		"track_id",
+		[
+			DataRequired()
+		]
+	)
+	# access_token = StringField(
+	# 	"access_token",
+	# 	[
+	# 		DataRequired()
+	# 	]
+	# )
 
-	y_pred = clf.predict(x_test)
+class CreateAccessToken(Form):
+	master_key = StringField(
+		"master_key",
+		[
+			DataRequired()
+		]
+	)
 
-	dot_data = tree.export_graphviz(clf, out_file=None) 
-	graph = graphviz.Source(dot_data) 
-	graph.render("tree_{}".format(target_var))
-	graph = graphviz.Source(dot_data)
+_redis_access_sem = BoundedSemaphore(1)
+_reds_conn = redis.Redis(
+		host=REDIS_IP,
+		port=REDIS_PORT,
+		db=REDIS_ACCESS_DB
+	)
 
+ACCESS_TOKEN_KEY = "access_tokens"
+
+def create_access_token():
+	_redis_access_sem.acquire()	
+	try:
+		access_token = base64.b64encode(os.urandom(20)).decode("utf-8")
+		_reds_conn.rpush(
+			ACCESS_TOKEN_KEY,
+			access_token
+		)
+	finally:
+		_redis_access_sem.release()
+
+	return access_token
+
+def check_access_token(access_token):
+	result = False
+	_redis_access_sem.acquire()
+	try:
+		for i in range(_reds_conn.llen(ACCESS_TOKEN_KEY)):
+			if access_token == _reds_conn.lindex(ACCESS_TOKEN_KEY, i):
+				result = True
+				break
+	finally:
+		_redis_access_sem.release()
+
+	return result
+
+@app.route("/api/ska_prob", methods=["GET"])
+def ska_prob_endpoint():
+	form = SkaProbForm(request.args)
+
+	if not form.validate():
+		return make_response(
+			jsonify({
+				"error" : form.errors
+			}),
+			400
+		)
 	
-	return clf, accuracy_score(y_test, y_pred)
+	track_info = find_track(form.track_name.data)
+	if track_info == None:
+		return make_response(
+			jsonify({
+				"error" : "track could not be found"
+			}),
+			404
+		)
 
-def is_it_ska(
-	clf=tree.DecisionTreeClassifier(),
-	length_dict=[],
-	feature_set=[],
-	track_id=""
-):
-	track_complete = {
-		"id" : track_id,
-		"analysis" : get_analysis_for_track(track_id)
+	prob = ska_prob(track_info["id"])
+
+	album_image_url = None
+	if len(track_info["album"]["images"]) > 0:
+		album_image_url = track_info["album"]["images"][0]["url"]
+
+	return {
+		"track_id" : track_info["id"],
+		"prob" : prob,
+		"album" : track_info["album"]["name"],
+		"title" : track_info["name"],
+		"artists" : [i["name"] for i in track_info["artists"]],
+		"album_image_url" : album_image_url,
+		"track_link" : "https://open.spotify.com/track/{}".format(track_info["id"])
 	}
 
-	ml_set = get_ml_features(
-		complete_track=track_complete,
-		feature_set=feature_set,
-		length_dict=length_dict
-	)
+@app.route("/api/correction", methods=["POST"])
+def ska_correction_endpoint():
+	form = SkaCorrectionForm(request.form)
 
-	cols = list(ml_set.keys())
-	df = pd.DataFrame([ml_set], columns=cols)
-
-	x = df[cols]
-
-	return clf.predict_proba(x)
-
-def get_track_data():
-	training_tracks = get_playlist_tracks(
-		play_name=SOURCE_PLAYLIST
-	)
-
-	ska_tracks = get_playlist_tracks(
-		play_name=SKA_PLAYLIST
-	)
-
-	track_analysis = get_analysis_for_tracks(
-		tracks=training_tracks
-	)
-
-	print("getting generes from Spotfiy")
-	def processTrainingTracks(i):
-		return {
-			"id" : training_tracks[i],
-			"analysis" : track_analysis[i]
-		}
-	
-	tracks_complete = []
-	for i in range(0, len(training_tracks)):
-		tracks_complete.append(
-			processTrainingTracks(i)
+	if not form.validate():
+		return make_response(
+			jsonify({
+				"error" : form.errors
+			}),
+			400
 		)
 
-	n_beats = int(sum(len(i["analysis"]["beats"]) for i in tracks_complete) / len(tracks_complete))
-	n_bars = int(sum(len(i["analysis"]["bars"]) for i in tracks_complete) / len(tracks_complete))
-	n_sections = int(sum(len(i["analysis"]["sections"]) for i in tracks_complete) / len(tracks_complete))
-	n_segments = int(sum(len(i["analysis"]["segments"]) for i in tracks_complete) / len(tracks_complete))
-	n_tatums = int(sum(len(i["analysis"]["tatums"]) for i in tracks_complete) / len(tracks_complete))
-
-	length_dict = {
-		"beats" : n_beats,
-		"sections" : n_sections,
-		"segments" : n_segments,
-		"tatums" : n_tatums,
-		"bars" : n_bars
-	}
-
-	return tracks_complete, ska_tracks, length_dict
-
-
-def create_clf(
-	tracks_complete,
-	ska_tracks,
-	feature_set,
-	length_dict,
-	redis_connection
-):
-	def process_complete_track(i):
-		return get_ml_features(
-			i,
-			list(feature_set),
-			length_dict,
-			ska_tracks=ska_tracks,
-			redis_connection=redis_connection
-		)
-
-	ml_set = []
-	for i in tracks_complete:
-		ml_set.append(
-			process_complete_track(i)
-		)
-	# num_cores = int(multiprocessing.cpu_count())
-	# ml_set = Parallel(n_jobs=num_cores)(delayed(process_complete_track)(i) for i in tracks_complete)
-
-	cols = list(ml_set[0].keys())
-	df = pd.DataFrame(ml_set, columns=cols)
-	cols.remove("ska")
-
-	clf, acc = gen_classifier(
-		target_var="ska",
-		features=cols,
-		df=df,
-	)
-
-	n_beats = length_dict["beats"]
-	n_sections = length_dict["sections"]
-	n_segments = length_dict["segments"]
-	n_tatums = length_dict["tatums"]
-
-	toDump = ClfInfo()
-	toDump.clf = clf
-	toDump.n_beats = n_beats
-	toDump.n_sections = n_sections
-	toDump.n_segments = n_segments
-	toDump.n_tatums = n_tatums
-	toDump.feature_set = feature_set
-	toDump.length_dict = length_dict
-
-	name = 'clf/{}_clf_{}.bin'.format(int(acc * 1000), get_feature_set_hash(feature_set))
-
-	pickle.dump(toDump, open(name, 'wb'), pickle.HIGHEST_PROTOCOL)
-	
-	return acc
-
-def get_feature_set_hash(feature_set):
-	parts = []
-	for feature in feature_set:
-		parts.append(
-			"{}_{}_{}".format(feature["fun"].__name__, feature["key"], feature["sec"])
-		)
-
-	name = '_'.join(parts)
-	name_hash = hashlib.sha1(name.encode('utf-8')).hexdigest()
-	return "{}".format(name_hash)
-
-def recreate_training_playlist():
-	ska_tracks = get_ska_tracks()
-
-	tracks = get_playlist_tracks(play_name="training set")
-	tracks = [i for i in tracks if i not in ska_tracks]
-
-	random.shuffle(tracks)
-
-	tracks = tracks[:len(ska_tracks)]
-
-	add_tracks_to_playlist(
-		playlist_id=get_playlist_by_name("new training set")[0],
-		tracks=tracks
-	)
-
-	add_tracks_to_playlist(
-		playlist_id=get_playlist_by_name("new training set")[0],
-		tracks=ska_tracks
-	)
-
-def create_all_clf():
-	feature_sets_complete = [
- 		{ "fun" : transform, "key" : "bars", "sec" : "duration"},
- 		{ "fun" : transform, "key" : "beats", "sec" : "duration"},
- 		{ "fun" : transform, "key" : "tatums", "sec" : "duration"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "duration"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "tempo"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "key"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "mode"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "loudness"},
- 		# { "fun" : transform, "key" : "sections", "sec" : "tempo_confidence"},
- 		{ "fun" : transform, "key" : "sections", "sec" : "time_signature"},
- 		{ "fun" : transform, "key" : "segments", "sec" : "duration"},
- 		{ "fun" : transform, "key" : "segments", "sec" : "loudness_max"},
- 		{ "fun" : avg_value, "key" : "segments", "sec" : "pitches"},
- 		{ "fun" : avg_value, "key" : "segments", "sec" : "timbre"},
-	]
-
-	tracks_complete, ska_tracks, length_dict = get_track_data()
-
-	feature_sets = []
-	for i in range(0, len(feature_sets_complete) + 1):
-		feature_sets.extend(
-			list(itertools.combinations(feature_sets_complete, i))
-		)
-
-	# to_remove = []
-	# for feature_set in feature_sets:
-	# 	pattern = re.compile(
-	# 		"\\d\\d\\d_clf_{}.bin".format(
-	# 			get_feature_set_hash(feature_set)
-	# 		)
+	# access_token = form.access_token.data.encode("utf-8")
+	# if not check_access_token(access_token):
+	# 	return make_response(
+	# 		jsonify({
+	# 			"error" : "invalid access token"
+	# 		}),
+	# 		403
 	# 	)
 
-	# 	file_exists = [0 for filename in os.listdir("./clf") if pattern.match(filename)]
-
-	# 	if len(feature_set) == 0 or len(file_exists) > 0:
-	# 		to_remove.append(
-	# 			feature_set
-	# 		)
-
-	# for i in to_remove:
-	# 	feature_sets.remove(i)
-
-	# def process(feature_set):
-	# 	create_clf(
-	# 		ska_tracks=ska_tracks,
-	# 		tracks_complete=tracks_complete,
-	# 		feature_set=feature_set,
-	# 		length_dict=length_dict
-	# 	)
-
-	# num_cores = int(multiprocessing.cpu_count())
-	# Parallel(n_jobs=num_cores)(delayed(process)(i) for i in feature_sets)
-
-	# return
-
-	redis_connection = redis.Redis(
-		host='localhost',
-		port=6379,
-		db=0
+	add_track_update(
+		track_id=form.track_id.data,
+		is_ska=form.ska.data,
+		ip_address=request.remote_addr
+	)
+	
+	return make_response(
+		jsonify({
+			"result" : "success"
+		}),
+		200
 	)
 
-	delta_histroy = []
-	for feature_set in feature_sets:
-		start_time = datetime.utcnow()
-		pattern = re.compile(
-			"\\d\\d\\d_clf_{}.bin".format(
-				get_feature_set_hash(feature_set)
-			)
+
+@app.route("/api/create_access_token", methods=["POST"])
+def create_access_token_endpoint():
+	form = CreateAccessToken(request.form)
+
+	if not form.validate():
+		return make_response(
+			jsonify({
+				"error" : form.errors
+			}),
+			400
 		)
 
-		file_exists = [0 for filename in os.listdir("./clf") if pattern.match(filename)]
-		acc = 0.0
-		if(
-			len(feature_set) > 0 and
-			len(file_exists) == 0
-		):
-			acc = create_clf(
-				ska_tracks=ska_tracks,
-				tracks_complete=tracks_complete,
-				feature_set=feature_set,
-				length_dict=length_dict,
-				redis_connection=redis_connection
-			)
-
-		delta = (datetime.utcnow() - start_time).total_seconds()
-		delta_histroy.append(delta)
-		if len(delta_histroy) > 0:
-			delta_avg = sum(delta_histroy) / len(delta_histroy)
-
-		print_progress_bar(
-			feature_sets.index(feature_set),
-			len(feature_sets) + 1,
-			prefix="Creating ml sets",
-			suffix="acc {:.2f} took {:.2f} secs avg {:.2f}".format(acc, delta, delta_avg)
+	if form.master_key.data != MASTER_ACCESS_TOKEN:
+		return make_response(
+			jsonify({
+				"error" : "invalid access token"
+			}),
+			403
 		)
 
-	print_progress_bar(feature_sets.index(feature_set), len(feature_sets) + 1, prefix="Creating ml sets")
+	return make_response(
+		jsonify({
+			"result" : create_access_token()
+		}),
+		200
+	)
 
-def get_top_x_clf(x):
-	ratings = []
 
-	target_floder = "./clf"
-
-	for filename in os.listdir(target_floder):
-		ratings.append({
-			"rating" : int(filename[:3]),
-			"filename" : "{}/{}".format(target_floder, filename)
-		})
-
-	ratings.sort(key=lambda x: x["rating"], reverse=True)
-
-	return ratings[:min(x, len(ratings))]
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def default_path_endpoint(path):
+	if path != "" and os.path.exists(os.path.join(app.static_folder, path).strip()):
+		return send_from_directory(app.static_folder, path)
+	else:
+		return send_from_directory(app.static_folder, 'index.html')
 
 def main():
-	set_login(
-		api_auth=API_AUTH,
-		refresh_token=REFRESH_TOKEN,
-	)
+	# create_fresh_clf()
+	# return
+	load_clfs()
+	Thread(target=track_updater_worker).start()
+	serve(app, host="0.0.0.0", port=7000)
 
-	create_all_clf()
-
-	clf_to_test = get_top_x_clf(5)
-
-	ska_tracks = get_ska_tracks()
-	tracks_complete, ska_tracks, length_dict = get_track_data()
-
-	for i in clf_to_test:
-		clfInfo = pickle.load(open(i["filename"], 'rb'))
-		track_id = "6UNf12sZXLcvQUbNpyfKHd"
-
-		if track_id in ska_tracks:
-			raise Exception("Already Learned about this one")
-
-		# create_clf(
-		# 	tracks_complete=tracks_complete,
-		# 	ska_tracks=ska_tracks,
-		# 	feature_set=clfInfo.feature_set,
-		# 	length_dict=clfInfo.length_dict,
-		# 	redis_connection=None
-		# )
-
-		ska_prob = list(is_it_ska(
-			clf=clfInfo.clf,
-			length_dict=clfInfo.length_dict,
-			feature_set=clfInfo.feature_set,
-			track_id=track_id
-		))[0]
-
-		track_info = get_track(track_id)
-		print("prob of {} being ska is {:.2f}%".format(track_info["name"], ska_prob[1] * 100))
-
-main()
+if __name__ == "__main__":
+	main()

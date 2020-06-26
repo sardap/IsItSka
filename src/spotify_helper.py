@@ -1,3 +1,4 @@
+import sys
 import random
 import requests
 import json
@@ -6,19 +7,22 @@ import random
 import time
 import redis
 import multiprocessing
+
 import numpy as np
+import urllib.parse
 
 from datetime import datetime, timedelta
 from os import path
 from threading import BoundedSemaphore
 from joblib import Parallel, delayed
 
-from env import DB_PATH
+from env import API_AUTH, REFRESH_TOKEN
 
 DEFAULT_BACKOFF = 1
 POST = "POST"
 PUT = "PUT"
 GET = "GET"
+DELETE = "DELETE"
 
 _r = {}
 _api_auth = None
@@ -29,14 +33,33 @@ _access_token_expire_time = None
 
 _request_sem = BoundedSemaphore(3)
 
-def get_from_cache(key=""):
+def get_time_key(key):
+	return "{}_time".format(key)
+
+def get_cache_time():
+	return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
+
+def get_from_cache(key, expire_time_secs=None):
+	if expire_time_secs != None:
+		if not _r.exists(get_time_key(key)):
+			_r.set(get_time_key(key), get_cache_time())
+
+		inserted_time = datetime.datetime.strptime(
+			_r.get(get_time_key(key)),
+			"%Y-%m-%d %H:%M:%S.%f"
+		)
+		delta = (datetime.utcnow() - inserted_time).total_seconds()
+		if delta > expire_time_secs:
+			return None
+
 	if _r.exists(key):
 		return json.loads(_r.get(key))
 
 	return None
 
-def update_cache(key="", value=""):
+def update_cache(key, value):
 	_r.set(key, json.dumps(value))
+	_r.set(get_time_key(key), get_cache_time())
 
 def init_cache():
 	global _r
@@ -85,6 +108,7 @@ def make_request(
 	headers=None,
 	payload="",
 	backoff=DEFAULT_BACKOFF,
+	params={},
 	calls=0
 ):
 	if(headers == None):
@@ -101,7 +125,8 @@ def make_request(
 			url,
 			data=payload,
 			headers=headers,
-			timeout=None
+			timeout=None,
+			params=params
 		)
 	finally:
 		_request_sem.release()
@@ -125,7 +150,7 @@ def make_request(
 		)
 	
 	if response.status_code > 400 and response.status_code < 499:
-		print("Error code {} Error: {}".format(response.status_code, response.text))
+		print("Error code on {} URL: {} Error: {}".format(response.status_code, url, response.text))
 		return None
 
 	return response
@@ -151,7 +176,7 @@ def print_progress_bar(iteration, total, prefix = '', suffix = '', decimals = 1,
     if iteration == total: 
         print()
 
-def get_or_fetch(url=None, key=None):
+def get_or_fetch(url, key, expire_time_secs=None):
 	cache_result = get_from_cache(
 		key=key
 	)
@@ -340,6 +365,85 @@ def add_tracks_to_playlist(playlist_id, tracks):
 		}
 		response = make_request(url, method=POST, payload=json.dumps(payload))
 
+def add_track_to_playlist(playlist_id, track_id):
+	return add_tracks_to_playlist(
+		playlist_id=playlist_id,
+		tracks=[track_id]
+	)
+
+def search(search_query, search_type="track"):
+	url = "https://api.spotify.com/v1/search"
+	parmas = {
+		"q" : search_query,
+		"type" : search_type
+	}
+
+	parsed_url = "{}?{}".format(
+		url,
+		urllib.parse.urlencode(parmas)
+	)
+
+	return get_or_fetch(parsed_url, key=parsed_url)
+
+def find_closest(ary, target, get_fun, dist_fun):
+	min_dist = sys.maxsize
+	best_idx = 0
+
+	for i in range(0, len(ary)):
+		dist = dist_fun(target, get_fun(ary, i))
+		if dist < min_dist:
+			min_dist = dist
+			best_idx = i
+
+	return best_idx
+
+def find_track(track_name):
+	response = search(track_name, search_type="track")
+
+	def get_track_name(ary, i):
+		return ary[i]["name"]
+
+	def dist_fun(target, other):
+		return editdistance.distance(target.lower(), other.lower())
+	
+	if len(response["tracks"]["items"]) == 0:
+		return None
+
+	idx = find_closest(
+		response["tracks"]["items"],
+		track_name,
+		get_track_name,
+		dist_fun
+	)
+
+	return response["tracks"]["items"][idx]
+
+def remove_tracks_from_playlist(playlist_id, tracks):
+	url = "https://api.spotify.com/v1/playlists/{}/tracks".format(
+		urllib.parse.quote(playlist_id)
+	)
+
+	for i in range(0, len(tracks), 100):
+		body = {
+			"tracks" : tracks[i:min(i + 100, len(tracks))]
+		}
+		response = make_request(
+			url,
+			method=DELETE,
+			payload=body
+		)
+
+def remove_track_from_playlist(playlist_id, track_id):
+	return remove_tracks_from_playlist(
+		playlist_id=playlist_id,
+		tracks=[track_id]
+	)
+
+
 
 init_cache()
 
+set_login(
+	api_auth=API_AUTH,
+	refresh_token=REFRESH_TOKEN,
+)

@@ -12,7 +12,7 @@
 			"console": "integratedTerminal",
 			"envFile": "${workspaceFolder}/.env",
 			"env": {
-				"DB_PATH" : "db.json"
+				"STATIC_FILE_PATH" : "${workspaceFolder}/frontend/build"
 			}
 		}
 	]
