@@ -129,9 +129,12 @@ class App extends React.Component {
 		return (
 			<body className="mainbody">
 				{this.state.loading ? this.loading() : this.content() }
+				<div className="text-center">
+					{this.version}
+				</div>
 			</body>
 		);
 	}
 }
   
-export default App
+export default App;
