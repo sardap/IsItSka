@@ -777,12 +777,14 @@ def recreate_best_clf():
 
 def clf_refresher_worker(sleep_time=3 * 60 * 60):
 	while True:
-		print("recreaing best clf clfs")
-		if recreate_best_clf():
-			print("clf updated reloading")
-			load_clfs()
-		print("finshed refreshing clf")
-		time.sleep(sleep_time)
+		try:
+			print("recreaing best clf clfs")
+			if recreate_best_clf():
+				print("clf updated reloading")
+				load_clfs()
+			print("finshed refreshing clf")
+		finally:
+			time.sleep(sleep_time)
 
 def create_fresh_clf():
 	# recreate_training_playlist()
