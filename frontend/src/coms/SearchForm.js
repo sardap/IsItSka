@@ -34,15 +34,21 @@ class SearchForm extends React.Component {
 				search_entry_text: this.props.track_name
 			});
 		}
+
+		if(this.props.artist_name !== undefined) {
+			this.setState({
+				artist_name: this.props.artist_name
+			});
+		}
 	}
 
-	buttonClicked = (text) => {
+	buttonClicked = (text, artist_text) => {
 		if(text == undefined)
 		{
 			return	
 		}
 
-		this.search_callback(text);
+		this.search_callback(text, artist_text);
 	}
 
 	render() {
@@ -60,12 +66,22 @@ class SearchForm extends React.Component {
 								defaultValue={this.props.track_name}
 								/>
 						</div>
+						<div className="row justify-content-center">
+							<label className="text-dark h3 p-3">Enter artist name (optional)</label>
+						</div>
+						<div className="row mb-2">
+							<input 
+								className="form-control p-1 text-center ml-5 mr-5"
+								onChange={(e) => { this.setState({artist_text: e.target.value})}}
+								defaultValue={this.props.artist_name}
+								/>
+						</div>
 					</div>
 					<div class="form-group">
 						<button 
 							class={"border border-info btn btn-lg btn-light checkerboard-background-lg p-4 rounded"}
 							type="button" 
-							onClick={(e) => this.buttonClicked(this.state.search_entry_text)}
+							onClick={(e) => this.buttonClicked(this.state.search_entry_text, this.state.artist_text)}
 							disabled={this.state.search_entry_text !== undefined && this.state.search_entry_text.length > 0 ? false : true}
 							>
 								<div className="text-black bg-white h3 rounded p-1">

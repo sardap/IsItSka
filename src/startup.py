@@ -26,6 +26,12 @@ class SkaProbForm(Form):
 			validate_track_name
 		]
 	)
+	artist_name = StringField(
+		"artist_name",
+		[
+		]
+	)
+
 
 class SkaCorrectionForm(Form):
 	ska = BooleanField(
@@ -100,8 +106,17 @@ def ska_prob_endpoint():
 			}),
 			400
 		)
+
+	artist_name = form.artist_name.data
+	if len(artist_name) == 0:
+		artist_name = None
+
 	
-	track_info = find_track(form.track_name.data)
+	track_info = find_track(
+		form.track_name.data,
+		artist_name=artist_name
+	)
+
 	if track_info == None:
 		return make_response(
 			jsonify({

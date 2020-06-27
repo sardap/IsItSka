@@ -400,15 +400,23 @@ def find_closest(ary, target, get_fun, dist_fun):
 
 	return best_idx
 
-def find_track(track_name):
+def find_track(track_name, artist_name=None):
 	response = search(track_name, search_type="track")
 
 	def get_track_name(ary, i):
-		return ary[i]["name"]
+		return ary[i]
 
 	def dist_fun(target, other):
-		return editdistance.distance(target.lower(), other.lower())
-	
+		result = editdistance.distance(
+			target.lower(),
+			other["name"].lower()
+		)
+		
+		if artist_name != None:
+			result += min(editdistance.distance(i["name"].lower(), artist_name.lower()) for i in other["artists"])
+
+		return result
+				
 	if len(response["tracks"]["items"]) == 0:
 		return None
 

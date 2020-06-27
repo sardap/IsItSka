@@ -14,10 +14,17 @@ class App extends React.Component {
 
 
 		const url_params = new URLSearchParams(window.location.search);
+
+		let artist_name = url_params.get('artist_name');
+		if(artist_name == null) {
+			artist_name = undefined;
+		}
+
 		const track_name = url_params.get('track_name');
 		if(track_name !== undefined && track_name !== null){
 			this.track_name = track_name;
-			this.search(this.track_name);
+			this.artist_name = artist_name;
+			this.search(this.track_name, artist_name);
 			this.state = {
 				loading : true
 			}
@@ -32,14 +39,25 @@ class App extends React.Component {
 		document.title = "Is it Ska?"
 	}
 
-	redirectToTrack = (track_name) => {
-		window.location.href = window.location.hostname + 
+	redirectToTrack = (track_name, artist_text) => {
+		let url = window.location.hostname + 
 			"?track_name=" + track_name;
+
+		if(artist_text !== undefined && artist_text !== null && artist_text.length > 0) {
+			url += "&artist_name=" + artist_text;
+		}
+
+		window.location.href = url
 	}
 
-	search  = async (search) => {
-		const url = this.search_endpoint + 
-			"?track_name=" + search;
+	search  = async (track_text, artist_text) => {
+		console.log("making request track=" + track_text + " artist " + artist_text);
+		let url = this.search_endpoint + 
+			"?track_name=" + track_text;
+
+		if(artist_text !== undefined && artist_text !== null && artist_text.length > 0) {
+			url += "&artist_name=" + artist_text;
+		}
 
 		this.setState({
 			loading : true,
@@ -90,6 +108,7 @@ class App extends React.Component {
 				<SearchForm 
 					search_callback={this.redirectToTrack}
 					track_name={this.track_name}
+					artist_name={this.artist_name}
 				/>
 			</div>
 
