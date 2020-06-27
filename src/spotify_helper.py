@@ -374,11 +374,13 @@ def add_track_to_playlist(playlist_id, track_id):
 		tracks=[track_id]
 	)
 
-def search(search_query, search_type="track"):
+def search(search_query, search_type="track", offset=0):
 	url = "https://api.spotify.com/v1/search"
 	parmas = {
 		"q" : search_query,
-		"type" : search_type
+		"type" : search_type,
+		"limit" : 50,
+		"offset" : offset
 	}
 
 	parsed_url = "{}?{}".format(
@@ -398,10 +400,9 @@ def find_closest(ary, target, get_fun, dist_fun):
 			min_dist = dist
 			best_idx = i
 
-	return best_idx
+	return best_idx, min_dist
 
 def find_track(track_name, artist_name=None):
-	response = search(track_name, search_type="track")
 
 	def get_track_name(ary, i):
 		return ary[i]
@@ -417,17 +418,31 @@ def find_track(track_name, artist_name=None):
 
 		return result
 				
-	if len(response["tracks"]["items"]) == 0:
-		return None
+	i = 0
+	idx = -1
+	mind_dist = sys.maxsize
+	min_dist = 10
+	while i < 100 and min_dist > 1: 
+		response = search(track_name, search_type="track", offset=i)
 
-	idx = find_closest(
-		response["tracks"]["items"],
-		track_name,
-		get_track_name,
-		dist_fun
-	)
+		if len(response["tracks"]["items"]) == 0:
+			if idx == -1:
+				return None
+			else:
+				break
 
-	return response["tracks"]["items"][idx]
+		idx, min_dist = find_closest(
+			response["tracks"]["items"],
+			track_name,
+			get_track_name,
+			dist_fun,
+		)
+
+		result = response["tracks"]["items"][idx]
+
+		i += len(response["tracks"]["items"])
+
+	return result
 
 def remove_tracks_from_playlist(playlist_id, tracks):
 	url = "https://api.spotify.com/v1/playlists/{}/tracks".format(
