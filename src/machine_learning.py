@@ -703,6 +703,9 @@ def load_clfs():
 			pickle.load(open(to_load["filename"], 'rb'))
 		)
 
+	if len(_loaded_clfs) == 0:
+		raise Exception("No Clf loaded")
+
 def create_fresh_clf():
 	# recreate_training_playlist()
 
