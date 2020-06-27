@@ -1,3 +1,4 @@
+import time
 import copy
 import os
 import multiprocessing
@@ -21,7 +22,7 @@ from datetime import datetime
 from multiprocessing import Process, JoinableQueue
 from threading import Semaphore, Thread
 
-from env import API_AUTH, REFRESH_TOKEN, SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH, REDIS_DB, REDIS_IP, REDIS_PORT
+from env import API_AUTH, REFRESH_TOKEN, SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH, REDIS_DB, REDIS_IP, REDIS_PORT, NOT_SKA_PLAYLIST
 from spotify_helper import get_analysis_for_tracks, get_access_token, get_playlist_tracks, get_genres_for_track, set_login, get_analysis_for_track, get_track, add_tracks_to_playlist, get_playlist_by_name, remove_tracks_from_playlist
 
 
@@ -220,6 +221,9 @@ def _is_it_ska(
 def ska_prob(track_id):
 	prop_sum = 0
 
+	while len(_loaded_clfs) == 0:
+		time.sleep(0.5)
+
 	clfInfo = _loaded_clfs[0]
 	ska_prob = list(_is_it_ska(
 		clf=clfInfo.clf,
@@ -344,24 +348,45 @@ def get_feature_set_hash(feature_set):
 	return "{}".format(name_hash)
 
 def recreate_training_playlist():
-	new_training_set_id = get_playlist_by_name("new training set")[0]
+	new_training_set_id, new_training_set_n = get_playlist_by_name("new training set")
+	
+	current_tracks = get_playlist_tracks(
+		play_id=new_training_set_id,
+		n=new_training_set_n
+	)
 
 	remove_tracks_from_playlist(
 		playlist_id=new_training_set_id,
-		tracks=get_playlist_tracks(
-			play_id=new_training_set_id
-		)
+		tracks=current_tracks
 	)
 
 	ska_tracks = get_ska_tracks()
 
-	tracks = get_playlist_tracks(play_name="not ska training")
+	not_ska_playlist_id, not_ska_playlist_n = get_playlist_by_name(NOT_SKA_PLAYLIST)
+
+	tracks = get_playlist_tracks(
+		play_id=not_ska_playlist_id,
+		n=not_ska_playlist_n
+	)
 	tracks = [i for i in tracks if i not in ska_tracks]
 
-	# random.shuffle(tracks)
+	to_remove = []
+
+	for track in tracks: 
+		if get_analysis_for_track(track_id=track) == None:
+			to_remove.append(track)
+
+	remove_tracks_from_playlist(
+		playlist_id=not_ska_playlist_id,
+		tracks=to_remove
+	)
+
+	for track in to_remove:
+		tracks.remove(track)
+
+	random.shuffle(tracks)
 
 	tracks = tracks[:len(ska_tracks)]
-
 
 	add_tracks_to_playlist(
 		playlist_id=new_training_set_id,
@@ -696,6 +721,9 @@ def get_top_x_clf(x, percent=False):
 	return ratings[:min(length, len(ratings))]
 
 def load_clfs():
+
+	_loaded_clfs.clear()
+
 	clfs_filenames = get_top_x_clf(5)
 
 	for to_load in clfs_filenames:
@@ -705,6 +733,56 @@ def load_clfs():
 
 	if len(_loaded_clfs) == 0:
 		raise Exception("No Clf loaded")
+
+def recreate_best_clf():
+	result = False
+	recreate_training_playlist()
+
+	tracks_complete, ska_tracks, length_dict = get_track_data()
+
+	rconn = redis.Redis(
+		host=REDIS_IP,
+		port=REDIS_PORT,
+		db=REDIS_DB
+	)
+
+	clfs_filenames = get_top_x_clf(5)
+
+	for clfInfo in _loaded_clfs:
+		dump, name, acc = create_clf(
+			tracks_complete=tracks_complete,
+			ska_tracks=ska_tracks,
+			feature_set=clfInfo.feature_set,
+			length_dict=clfInfo.length_dict,
+			redis_connection=rconn
+		)
+
+		file_info = clfs_filenames[_loaded_clfs.index(clfInfo)]
+		old_acc = file_info["rating"]
+
+		print("Acc:{} old Acc:{}".format(acc, old_acc))
+
+		if acc * 1000 > old_acc + 1:
+			os.remove(file_info["filename"])
+
+			with open(name, "wb") as f:
+				f.write(dump)
+
+			print("new model is better than old model")
+			result = True
+
+	rconn.close()
+
+	return result
+
+def clf_refresher_worker(sleep_time=3 * 60 * 60):
+	while True:
+		print("recreaing best clf clfs")
+		if recreate_best_clf():
+			print("clf updated reloading")
+			load_clfs()
+		print("finshed refreshing clf")
+		time.sleep(sleep_time)
 
 def create_fresh_clf():
 	# recreate_training_playlist()

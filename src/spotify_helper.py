@@ -149,7 +149,7 @@ def make_request(
 			calls=calls + 1
 		)
 	
-	if response.status_code > 400 and response.status_code < 499:
+	if response.status_code >= 400 and response.status_code <= 499:
 		print("Error code on {} URL: {} Error: {}".format(response.status_code, url, response.text))
 		return None
 
@@ -187,7 +187,7 @@ def get_or_fetch(url, key, expire_time_secs=None):
 	# time.sleep(random.randint(0, 100))
 	response = make_request(url)
 	
-	if(response.status_code != 200):
+	if(response == None):
 		print("failled to get")
 		return None
 
@@ -427,13 +427,14 @@ def remove_tracks_from_playlist(playlist_id, tracks):
 	)
 
 	for i in range(0, len(tracks), 100):
+		selected = tracks[i:min(i + 100, len(tracks))]
 		body = {
-			"tracks" : tracks[i:min(i + 100, len(tracks))]
+			"tracks" : [{"uri" : "spotify:track:{}".format(j) } for j in selected]
 		}
 		response = make_request(
 			url,
 			method=DELETE,
-			payload=body
+			payload=json.dumps(body)
 		)
 
 def remove_track_from_playlist(playlist_id, track_id):

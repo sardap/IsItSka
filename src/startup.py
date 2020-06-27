@@ -8,7 +8,7 @@ from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError
 
 from spotify_helper import find_track
-from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf
+from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker
 from track_update import track_updater_worker, add_track_update
 from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT
 
@@ -205,6 +205,9 @@ def main():
 	load_clfs()
 	print("starting Track workers")
 	Thread(target=track_updater_worker).start()
+	print("staring clf refresher")
+	Thread(target=clf_refresher_worker).start()
+
 	print("starting webserver")
 	app.run(host="0.0.0.0", port=PORT, threaded=True)
 	# serve(app, host="0.0.0.0", port=PORT)
