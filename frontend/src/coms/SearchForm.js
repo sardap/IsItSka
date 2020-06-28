@@ -9,7 +9,8 @@ class SearchForm extends React.Component {
 		this.search_callback = this.props.search_callback;
 
 		this.state = {
-			button_text: this.getSearchButtonText()
+			button_text: this.getSearchButtonText(),
+			show_track_search: this.props.track_id === undefined
 		};
 	}
 
@@ -42,47 +43,116 @@ class SearchForm extends React.Component {
 		}
 	}
 
-	buttonClicked = (text, artist_text) => {
-		if(text == undefined)
+	buttonClicked = (text, artist_name, track_id) => {
+		if(text == undefined && track_id == undefined)
 		{
 			return	
 		}
 
-		this.search_callback(text, artist_text);
+		this.search_callback(text, artist_name, track_id);
+	}
+
+	renderSearchByName() {
+		return (
+			<div className="container">
+				<div className="row justify-content-center">
+					<label className="text-dark h2 p-3">Enter track name</label>
+				</div>
+				<div className="row mb-3">
+					<input 
+						className="form-control p-1 text-center ml-5 mr-5"
+						onChange={(e) => this.setState({search_entry_text: e.target.value})}
+						defaultValue={this.props.track_name}
+						value={this.state.search_entry_text}
+						/>
+				</div>
+				<div className="row justify-content-center">
+					<label className="text-dark h3 p-3">Enter artist name (optional)</label>
+				</div>
+				<div className="row mb-2">
+					<input 
+						className="form-control p-1 text-center ml-5 mr-5"
+						onChange={(e) => { this.setState({artist_name: e.target.value})}}
+						defaultValue={this.props.artist_name}
+						value={this.state.artist_name}
+						/>
+				</div>
+			</div>
+		);
+	}
+
+	renderSearchByID() {
+		return (
+			<div className="container">
+				<div className="row justify-content-center">
+					<label className="text-dark h2 p-3">Enter Spotify track URL</label>
+				</div>
+				<div className="row mb-5">
+					<input 
+						className="form-control p-1 text-center ml-5 mr-5"
+						onChange={(e) => this.setState({track_id: e.target.value})}
+						defaultValue={this.props.track_id}
+						value={this.state.track_id}
+						/>
+				</div>
+			</div>
+		)
+	}
+
+	toggleFields = async () => {
+		let next_state = !this.state.show_track_search;
+
+		if(!this.state.show_track_search) {
+			await this.setState({
+				track_id: null,
+				show_track_search: next_state
+			});
+		} else {
+			await this.setState({
+				search_entry_text: null,
+				artist_name: null,
+				show_track_search: next_state
+			});			
+		}
+
+		console.log("toggled: " + JSON.stringify(this.state));
 	}
 
 	render() {
 		return (
 			<div className="col text-center">
 				<form>
-					<div className="container">
-						<div className="row justify-content-center">
-							<label className="text-dark h2 p-3">Enter track name</label>
-						</div>
-						<div className="row mb-3">
-							<input 
-								className="form-control p-1 text-center ml-5 mr-5"
-								onChange={(e) => this.setState({search_entry_text: e.target.value})}
-								defaultValue={this.props.track_name}
-								/>
-						</div>
-						<div className="row justify-content-center">
-							<label className="text-dark h3 p-3">Enter artist name (optional)</label>
-						</div>
-						<div className="row mb-2">
-							<input 
-								className="form-control p-1 text-center ml-5 mr-5"
-								onChange={(e) => { this.setState({artist_text: e.target.value})}}
-								defaultValue={this.props.artist_name}
-								/>
-						</div>
+					<div class="custom-control custom-switch">
+						<input
+							type="checkbox"
+							class="custom-control-input"
+							id="customSwitch1"
+							checked={!this.state.show_track_search}
+							onChange={(e) => { this.toggleFields(); }}
+						/>
+						<label class="custom-control-label" for="customSwitch1">Use Spotify link</label>
 					</div>
-					<div class="form-group">
+					{this.state.show_track_search ? this.renderSearchByName() : this.renderSearchByID() }
+					<div class="form-group mt-3">
 						<button 
 							class={"border border-info btn btn-lg btn-light checkerboard-background-lg p-4 rounded"}
 							type="button" 
-							onClick={(e) => this.buttonClicked(this.state.search_entry_text, this.state.artist_text)}
-							disabled={this.state.search_entry_text !== undefined && this.state.search_entry_text.length > 0 ? false : true}
+							onClick={(e) => this.buttonClicked(this.state.search_entry_text, this.state.artist_name, this.state.track_id)}
+							disabled={
+								!(
+									(
+										this.state.search_entry_text !== undefined &&
+										this.state.search_entry_text !== null &&
+										this.state.search_entry_text.length > 0
+									)
+									|| 
+									(
+										this.state.track_id !== undefined &&
+										this.state.track_id !== null &&
+										this.state.track_id.length > 0
+									)
+								) ? true : false
+							}
 							>
 								<div className="text-black bg-white h3 rounded p-1">
 									{this.state.button_text}
