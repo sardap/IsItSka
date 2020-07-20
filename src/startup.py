@@ -1,3 +1,4 @@
+import re
 import redis
 import os
 import base64
@@ -5,11 +6,11 @@ import base64
 from threading import Thread, BoundedSemaphore
 from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file, make_response, send_from_directory
 from wtforms import Form, IntegerField, StringField, BooleanField
-from wtforms.validators import DataRequired, ValidationError
+from wtforms.validators import DataRequired, ValidationError, Optional
 
-from spotify_helper import find_track
-from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker
-from track_update import track_updater_worker, add_track_update
+from spotify_helper import find_track, get_track, spotify_helper_init
+from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker, get_feature_score
+from track_update import track_updater_worker, add_track_update, init_track_update
 from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
@@ -22,7 +23,7 @@ class SkaProbForm(Form):
 	track_name = StringField(
 		"track_name",
 		[
-			DataRequired(),
+			Optional(),
 			validate_track_name
 		]
 	)
@@ -31,6 +32,12 @@ class SkaProbForm(Form):
 		[
 		]
 	)
+	track_id = StringField(
+		"track_id",
+		[
+		]
+	)
+
 
 
 class SkaCorrectionForm(Form):
@@ -45,12 +52,6 @@ class SkaCorrectionForm(Form):
 			DataRequired()
 		]
 	)
-	# access_token = StringField(
-	# 	"access_token",
-	# 	[
-	# 		DataRequired()
-	# 	]
-	# )
 
 class CreateAccessToken(Form):
 	master_key = StringField(
@@ -59,41 +60,6 @@ class CreateAccessToken(Form):
 			DataRequired()
 		]
 	)
-
-_redis_access_sem = BoundedSemaphore(1)
-_reds_conn = redis.Redis(
-		host=REDIS_IP,
-		port=REDIS_PORT,
-		db=REDIS_ACCESS_DB
-	)
-
-ACCESS_TOKEN_KEY = "access_tokens"
-
-def create_access_token():
-	_redis_access_sem.acquire()	
-	try:
-		access_token = base64.b64encode(os.urandom(20)).decode("utf-8")
-		_reds_conn.rpush(
-			ACCESS_TOKEN_KEY,
-			access_token
-		)
-	finally:
-		_redis_access_sem.release()
-
-	return access_token
-
-def check_access_token(access_token):
-	result = False
-	_redis_access_sem.acquire()
-	try:
-		for i in range(_reds_conn.llen(ACCESS_TOKEN_KEY)):
-			if access_token == _reds_conn.lindex(ACCESS_TOKEN_KEY, i):
-				result = True
-				break
-	finally:
-		_redis_access_sem.release()
-
-	return result
 
 @app.route("/api/ska_prob", methods=["GET"])
 def ska_prob_endpoint():
@@ -107,15 +73,31 @@ def ska_prob_endpoint():
 			400
 		)
 
+	if len(form.track_id.data) == 0 and len(form.track_name.data) == 0:
+		return make_response(
+			jsonify({
+				"error" : "must set track id or track name"
+			}),
+			400
+		)
+
 	artist_name = form.artist_name.data
 	if len(artist_name) == 0:
 		artist_name = None
 
-	
-	track_info = find_track(
-		form.track_name.data,
-		artist_name=artist_name
-	)
+	if len(form.track_name.data) > 0:
+		track_info = find_track(
+			form.track_name.data,
+			artist_name=artist_name
+		)
+	else:
+		track_id = form.track_id.data
+		if not re.match("^[a-zA-Z0-9_]+$", track_id):
+			track_id = track_id.split("/")[4]
+			if len(track_id.split("?")) > 0:
+				track_id = track_id.split("?")[0]
+
+		track_info = get_track(track_id)
 
 	if track_info == None:
 		return make_response(
@@ -153,15 +135,6 @@ def ska_correction_endpoint():
 			400
 		)
 
-	# access_token = form.access_token.data.encode("utf-8")
-	# if not check_access_token(access_token):
-	# 	return make_response(
-	# 		jsonify({
-	# 			"error" : "invalid access token"
-	# 		}),
-	# 		403
-	# 	)
-
 	add_track_update(
 		track_id=form.track_id.data,
 		is_ska=form.ska.data,
@@ -175,35 +148,6 @@ def ska_correction_endpoint():
 		200
 	)
 
-
-@app.route("/api/create_access_token", methods=["POST"])
-def create_access_token_endpoint():
-	form = CreateAccessToken(request.form)
-
-	if not form.validate():
-		return make_response(
-			jsonify({
-				"error" : form.errors
-			}),
-			400
-		)
-
-	if form.master_key.data != MASTER_ACCESS_TOKEN:
-		return make_response(
-			jsonify({
-				"error" : "invalid access token"
-			}),
-			403
-		)
-
-	return make_response(
-		jsonify({
-			"result" : create_access_token()
-		}),
-		200
-	)
-
-
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
 def default_path_endpoint(path):
@@ -214,10 +158,11 @@ def default_path_endpoint(path):
 
 def main():
 	print("starting server")
-	# create_fresh_clf()
-	# return
+	spotify_helper_init()
 	print("Loading classfiers")
 	load_clfs()
+	print("initalsing track updater")
+	init_track_update()
 	print("starting Track workers")
 	Thread(target=track_updater_worker).start()
 	print("staring clf refresher")

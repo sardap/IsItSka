@@ -23,6 +23,8 @@ POST = "POST"
 PUT = "PUT"
 GET = "GET"
 DELETE = "DELETE"
+SECONDS_WEEK = 7 * 24 * 60 * 60
+SECONDS_HOUR = 60 * 60
 
 _r = {}
 _api_auth = None
@@ -39,36 +41,33 @@ def get_time_key(key):
 def get_cache_time():
 	return datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
 
-def get_from_cache(key, expire_time_secs=None):
-	if expire_time_secs != None:
-		if not _r.exists(get_time_key(key)):
-			_r.set(get_time_key(key), get_cache_time())
-
-		inserted_time = datetime.datetime.strptime(
-			_r.get(get_time_key(key)),
-			"%Y-%m-%d %H:%M:%S.%f"
-		)
-		delta = (datetime.utcnow() - inserted_time).total_seconds()
-		if delta > expire_time_secs:
-			return None
-
-	if _r.exists(key):
-		return json.loads(_r.get(key))
+def get_from_cache(key):
+	result = _r.get(key)
+	if result != None:
+		return json.loads(result)
 
 	return None
 
-def update_cache(key, value):
-	_r.set(key, json.dumps(value))
-	_r.set(get_time_key(key), get_cache_time())
+def update_cache(key, value, ex=None):
+	_r.set(key, json.dumps(value), ex=ex)
 
 def init_cache():
+	print("initalising cache")
 	global _r
 
-	_r = redis.Redis(
-		host=REDIS_IP,
-		port=REDIS_PORT,
-		db=REDIS_DB
-	)
+	connected = False
+	while not connected:
+		try:
+			_r = redis.Redis(
+				host=REDIS_IP,
+				port=REDIS_PORT,
+				db=REDIS_DB
+			)
+			connected = _r.ping()
+		except:
+			print("Trying again")
+			time.sleep(5)
+
 
 def set_login(api_auth=None, refresh_token=None):
 	global _api_auth
@@ -195,7 +194,8 @@ def get_or_fetch(url, key, expire_time_secs=None):
 
 	update_cache(
 		key=key,
-		value=result
+		value=result,
+		ex=expire_time_secs,
 	)
 
 	return result
@@ -223,7 +223,7 @@ def get_access_token_request(api_auth, refresh_token):
 def get_track_features(track_id=None):
 	url = "https://api.spotify.com/v1/audio-features/" + track_id
 	key = "feature:{}".format(track_id)
-	return get_or_fetch(key=key, url=url)
+	return get_or_fetch(key=key, url=url, expire_time_secs=SECONDS_WEEK)
 
 def get_playlist_tracks(play_name=None, play_id=None, n=None):
 
@@ -238,10 +238,11 @@ def get_playlist_tracks(play_name=None, play_id=None, n=None):
 
 	while(offset < n):
 		url = "https://api.spotify.com/v1/playlists/{}/tracks?tracks=100&fields=items(track(id))&offset={}".format(play_id, offset)
-		response = make_request(url)
+		key = "playlist:{}".format(url)
+		response = get_or_fetch(url, key, expire_time_secs=2 * 60)
 		offset += 100
 
-		for i in json.loads(response.text)["items"]:
+		for i in response["items"]:
 			result.append(i)
 
 	print("Playlist {} gotten".format(play_id))
@@ -251,12 +252,13 @@ def get_playlist_by_name(name):
 	print("Getting playlist named {}".format(name))
 
 	url = "https://api.spotify.com/v1/me/playlists"
-	response = make_request(url, GET)
+	key = "playlist_name:{}".format(url)
+	response = get_or_fetch(url, key, expire_time_secs=2 * 60)
 
 	if response == None:
 		return None, None
 
-	for i in json.loads(response.text)["items"]:
+	for i in response["items"]:
 		x = i["name"].lower()
 		if editdistance.distance(name.lower(), x.lower()) < 3:
 			return i["id"], i["tracks"]["total"]
@@ -314,7 +316,7 @@ def get_features_for_tracks(tracks=[]):
 def get_analysis_for_track(track_id=None):
 	key = "analysis:{}".format(track_id)
 	url = "https://api.spotify.com/v1/audio-analysis/{}".format(track_id)
-	return get_or_fetch(url, key)
+	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_analysis_for_tracks(tracks=None):
 	result = []
@@ -329,20 +331,22 @@ def get_analysis_for_tracks(tracks=None):
 
 	return result
 
-def get_track(track_id=""):
+def get_track(track_id):
+	track_id = urllib.parse.quote(track_id)
+
 	key = "track:{}".format(track_id)
 	url = "https://api.spotify.com/v1/tracks/{}".format(track_id)
-	return get_or_fetch(url, key)
+	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_album(album_id=""):
 	key = "album:{}".format(album_id)
 	url = "https://api.spotify.com/v1/albums/{}".format(album_id)
-	return get_or_fetch(url, key)
+	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_artist(artist_id=""):
 	key = "artist:{}".format(artist_id)
 	url = "https://api.spotify.com/v1/artists/{}".format(artist_id)
-	return get_or_fetch(url, key)
+	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_genres_for_track(track_id=""):
 	track_info = get_track(track_id)
@@ -388,7 +392,7 @@ def search(search_query, search_type="track", offset=0):
 		urllib.parse.urlencode(parmas)
 	)
 
-	return get_or_fetch(parsed_url, key=parsed_url)
+	return get_or_fetch(parsed_url, key=parsed_url, expire_time_secs=SECONDS_HOUR)
 
 def find_closest(ary, target, get_fun, dist_fun):
 	min_dist = sys.maxsize
@@ -466,9 +470,11 @@ def remove_track_from_playlist(playlist_id, track_id):
 		tracks=[track_id]
 	)
 
-init_cache()
 
-set_login(
-	api_auth=API_AUTH,
-	refresh_token=REFRESH_TOKEN,
-)
+def spotify_helper_init():
+	init_cache()
+
+	set_login(
+		api_auth=API_AUTH,
+		refresh_token=REFRESH_TOKEN,
+	)

@@ -12,7 +12,7 @@
 			"console": "integratedTerminal",
 			"envFile": "${workspaceFolder}/.env",
 			"env": {
-				"STATIC_FILE_PATH" : "${workspaceFolder}/frontend/build"
+				"STATIC_FILE_PATH": "${workspaceFolder}/frontend/build"
 			}
 		}
 	]

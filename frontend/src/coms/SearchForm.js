@@ -154,8 +154,11 @@ class SearchForm extends React.Component {
 								) ? true : false
 							}
 							>
-								<div className="text-black bg-white h3 rounded p-1">
-									{this.state.button_text}
+								<div className="text-black bg-white rounded p-1">
+									<div className="h3">
+										Search
+									</div>
+									<div className="h4">{this.state.button_text}</div>
 								</div>
 						</button>
 					</div>

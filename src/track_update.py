@@ -6,23 +6,11 @@ from queue import Queue
 from spotify_helper import get_playlist_tracks, add_track_to_playlist, get_playlist_by_name, remove_track_from_playlist
 from env import SKA_PLAYLIST, NOT_SKA_PLAYLIST, TRACK_VOTING_DB, REDIS_IP, REDIS_PORT
 
-_workQueue = Queue()
-
-_ska_playlist_id, _ska_playlist_n = get_playlist_by_name(
-	name=SKA_PLAYLIST
-)
-
-_ska_tracks = get_playlist_tracks(
-	play_name=SKA_PLAYLIST
-)
-
-_not_ska_playlist_id, _not_ska_playlist_n = get_playlist_by_name(
-	name=NOT_SKA_PLAYLIST
-)
-
-_not_ska_tracks = get_playlist_tracks(
-	play_name=NOT_SKA_PLAYLIST
-)
+_workQueue = None
+_ska_playlist_id = None
+_ska_tracks = None
+_not_ska_playlist_id = None
+_not_ska_tracks = None
 
 class WorkTask():
 	def __init__(self, track_id, is_ska, ip_address):
@@ -96,4 +84,29 @@ def add_track_update(track_id, is_ska, ip_address):
 			is_ska=is_ska,
 			ip_address=ip_address
 		)
+	)
+
+def init_track_update():
+	global _workQueue
+	global _ska_playlist_id
+	global _ska_tracks
+	global _not_ska_playlist_id
+	global _not_ska_tracks
+
+	_workQueue = Queue()
+
+	_ska_playlist_id, _ska_playlist_n = get_playlist_by_name(
+		name=SKA_PLAYLIST
+	)
+
+	_ska_tracks = get_playlist_tracks(
+		play_name=SKA_PLAYLIST
+	)
+
+	_not_ska_playlist_id, _not_ska_playlist_n = get_playlist_by_name(
+		name=NOT_SKA_PLAYLIST
+	)
+
+	_not_ska_tracks = get_playlist_tracks(
+		play_name=NOT_SKA_PLAYLIST
 	)

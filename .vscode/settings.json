@@ -6,6 +6,7 @@
 		"llen",
 		"rconn",
 		"rpush",
+		"spotify",
 		"urandom"
 	]
 }

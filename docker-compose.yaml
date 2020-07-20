@@ -6,32 +6,32 @@ services:
       environment:
         # ALLOW_EMPTY_PASSWORD is recommended only for development.
         - ALLOW_EMPTY_PASSWORD=yes
-        - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
+        # - REDIS_DISABLE_COMMANDS=FLUSHDB,FLUSHALL
       ports:
         - '6379:6379'
       volumes:
         - './data:/bitnami/redis/data'
-        
-    # website:
-    #     container_name: website
-    #     build: '.'
-    #     depends_on: 
-    #         - redis
-    #     environment:
-    #         - REDIS_IP=redis
-    #         - REDIS_PORT=6379
-    #         - REDIS_DB=0
-    #         - REDIS_ACCESS_DB=1
-    #         - TRACK_VOTING_DB=2
-    #         - SKA_PLAYLIST=ska training
-    #         - NOT_SKA_PLAYLIST=not ska training
-    #         - SOURCE_PLAYLIST=new training set
-    #         - API_AUTH=${API_AUTH}
-    #         - REFRESH_TOKEN=${REFRESH_TOKEN}
-    #         - ACCESS_KEY=f402a84a-353a-4d9d-a240-27ac50539c57
-    #         - MASTER_ACCESS_TOKEN=5378d94-e01e-4982-b2dc-4993e19dde45
-    #     ports:
-    #         - '7000:80'
-    #     volumes:
-    #         - './clf:/app/clf'
+    website:
+        container_name: website
+        build: '.'
+        depends_on: 
+            - redis
+        environment:
+            - REDIS_IP=redis
+            - REDIS_PORT=6379
+            - REDIS_DB=0
+            - REDIS_ACCESS_DB=1
+            - TRACK_VOTING_DB=2
+            - REDIS_ML_DB=3
+            - SKA_PLAYLIST=ska training
+            - NOT_SKA_PLAYLIST=not ska training
+            - SOURCE_PLAYLIST=new training set
+            - API_AUTH=${API_AUTH}
+            - REFRESH_TOKEN=${REFRESH_TOKEN}
+            - ACCESS_KEY=f402a84a-353a-4d9d-a240-27ac50539c57
+            - MASTER_ACCESS_TOKEN=5378d94-e01e-4982-b2dc-4993e19dde45
+        ports:
+            - '7000:80'
+        volumes:
+            - './clf:/app/clf'
         
