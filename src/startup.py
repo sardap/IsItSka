@@ -2,16 +2,17 @@ import re
 import redis
 import os
 import base64
+import random
 
 from threading import Thread, BoundedSemaphore
 from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file, make_response, send_from_directory
 from wtforms import Form, IntegerField, StringField, BooleanField
-from wtforms.validators import DataRequired, ValidationError, Optional
+from wtforms.validators import DataRequired, ValidationError, Optional, NumberRange
 
-from spotify_helper import find_track, get_track, spotify_helper_init
+from spotify_helper import find_track, get_track, spotify_helper_init, get_playlist_tracks, get_playlist_by_name
 from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker, get_feature_score
 from track_update import track_updater_worker, add_track_update, init_track_update
-from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT
+from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT, SKA_PLAYLIST
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
 
@@ -61,6 +62,31 @@ class CreateAccessToken(Form):
 		]
 	)
 
+class SomeSka(Form):
+	n = IntegerField(
+		"n",
+		[
+			DataRequired(),
+			NumberRange(min=0, max=10)
+		]
+	)
+
+
+def to_track_out(track_info, prob=-1):
+	album_image_url = None
+	if len(track_info["album"]["images"]) > 0:
+		album_image_url = track_info["album"]["images"][0]["url"]
+
+	return {
+		"track_id" : track_info["id"],
+		"prob" : prob,
+		"album" : track_info["album"]["name"],
+		"title" : track_info["name"],
+		"artists" : [i["name"] for i in track_info["artists"]],
+		"album_image_url" : album_image_url,
+		"track_link" : "https://open.spotify.com/track/{}".format(track_info["id"])
+	}
+
 @app.route("/api/ska_prob", methods=["GET"])
 def ska_prob_endpoint():
 	form = SkaProbForm(request.args)
@@ -109,19 +135,35 @@ def ska_prob_endpoint():
 
 	prob = ska_prob(track_info["id"])
 
-	album_image_url = None
-	if len(track_info["album"]["images"]) > 0:
-		album_image_url = track_info["album"]["images"][0]["url"]
+	return to_track_out(track_info, prob)
 
-	return {
-		"track_id" : track_info["id"],
-		"prob" : prob,
-		"album" : track_info["album"]["name"],
-		"title" : track_info["name"],
-		"artists" : [i["name"] for i in track_info["artists"]],
-		"album_image_url" : album_image_url,
-		"track_link" : "https://open.spotify.com/track/{}".format(track_info["id"])
-	}
+@app.route("/api/some_ska", methods=["GET"])
+def some_ska_endpoint():
+	form = SomeSka(request.args)
+
+	if not form.validate():
+		return make_response(
+			jsonify({
+				"error" : form.errors
+			}),
+			400
+		)
+
+	play_id, n = get_playlist_by_name(SKA_PLAYLIST)
+	tracks_ids = get_playlist_tracks(play_id=play_id, n=n)
+
+	random.shuffle(tracks_ids)
+
+	tracks = []
+	for track_id in tracks_ids[:form.n.data]:
+		tracks.append(to_track_out(get_track(track_id)))
+
+	return make_response(
+		jsonify({
+			"tracks" : tracks
+		}),
+		200
+	)
 
 @app.route("/api/correction", methods=["POST"])
 def ska_correction_endpoint():
