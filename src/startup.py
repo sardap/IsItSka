@@ -208,7 +208,7 @@ def main():
 	print("starting Track workers")
 	Thread(target=track_updater_worker).start()
 	print("staring clf refresher")
-	Thread(target=clf_refresher_worker).start()
+	# Thread(target=clf_refresher_worker).start()
 
 	print("starting webserver")
 	app.run(host="0.0.0.0", port=PORT, threaded=True)

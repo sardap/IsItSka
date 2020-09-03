@@ -886,7 +886,7 @@ def load_clfs():
 
 	_loaded_clfs.clear()
 
-	clfs_filenames = get_top_x_clf(0.1, percent=True)
+	clfs_filenames = get_top_x_clf(5, percent=False)
 
 	for to_load in clfs_filenames:
 		_loaded_clfs.append(
