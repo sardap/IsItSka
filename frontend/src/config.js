@@ -1,5 +1,5 @@
-const config = { 
-	VERSION : "1.0.2",
+const config = {
+	VERSION: "1.0.3",
 };
 
 export default config
