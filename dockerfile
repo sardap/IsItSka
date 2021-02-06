@@ -32,4 +32,4 @@ ENV PORT 80
 
 EXPOSE 80
 
-CMD [ "python3", "startup.py" ]
+CMD [ "python3", "app.py" ]
