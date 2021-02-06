@@ -9,9 +9,9 @@ from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file
 from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError, Optional, NumberRange
 
-from spotify_helper import get_spotipy_client, find_track, get_playlist_tracks
-from machine_learning import ska_prob, load_clfs, create_fresh_clf
-from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT, SKA_PLAYLIST
+from spotify_helper import get_spotipy_client, find_track, get_playlist_tracks, get_ska_playlist
+from machine_learning import ska_prob, init_clf
+from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, PORT, SKA_PLAYLIST
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
 
@@ -119,7 +119,6 @@ def ska_prob_endpoint():
             track_name=form.track_name.data,
             artist_name=artist_name)
 
-    # artist_name=artist_name
     else:
         track_id = form.track_id.data
         if not re.match("^[a-zA-Z0-9_]+$", track_id):
@@ -154,13 +153,13 @@ def some_ska_endpoint():
             400
         )
 
-    tracks_ids = get_playlist_tracks(SKA_PLAYLIST)
+    ska_tracks = get_ska_playlist()
 
-    random.shuffle(tracks_ids)
+    random.shuffle(ska_tracks)
 
     tracks = []
-    for track_id in tracks_ids[:form.n.data]:
-        tracks.append(to_track_out(get_spotipy_client().track(track_id)))
+    for track in ska_tracks[:form.n.data]:
+        tracks.append(to_track_out(get_spotipy_client().track(track['id'])))
 
     return make_response(
         jsonify({
@@ -184,23 +183,7 @@ def default_path_endpoint(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 
-def main():
-    create_fresh_clf()
-    return
-    # print("starting server")
-    # print("Loading classfiers")
-    # load_clfs()
-    # print("initalsing track updater")
-    # init_track_update()
-    # print("starting Track workers")
-    # Thread(target=track_updater_worker).start()
-    # print("staring clf refresher")
-    # # Thread(target=clf_refresher_worker).start()
-
-    # print("starting webserver")
-    # app.run(host="0.0.0.0", port=PORT, threaded=True)
-    # # serve(app, host="0.0.0.0", port=PORT)
-
-
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=PORT, threaded=True)
+
+init_clf()

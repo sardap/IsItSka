@@ -2,7 +2,7 @@ import spotipy
 import editdistance
 
 from spotipy.oauth2 import SpotifyClientCredentials
-from env import CLIENT_ID, CLIENT_SECRET
+from env import CLIENT_ID, CLIENT_SECRET, SKA_PLAYLIST
 
 sp = spotipy.Spotify(
     auth_manager=SpotifyClientCredentials(
@@ -69,9 +69,8 @@ def get_features_for_tracks(tracks):
     return result
 
 
-def add_track_to_playlist(playlist_id, track_id):
-    pass
+def get_ska_playlist():
+    return ska_playlist_loaded
 
 
-def remove_track_from_playlist(playlist_id, track_id):
-    pass
+ska_playlist_loaded = get_playlist_tracks(SKA_PLAYLIST)

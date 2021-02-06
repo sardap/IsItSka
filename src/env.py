@@ -13,15 +13,6 @@ CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 CLF_FOLDER_PATH = os.environ["CLF_FOLDER_PATH"]
 STATIC_FILE_PATH = os.environ["STATIC_FILE_PATH"]
 
-
-REDIS_IP = os.environ["REDIS_IP"]
-REDIS_PORT = os.environ["REDIS_PORT"]
-REDIS_DB = os.environ["REDIS_DB"]
-REDIS_ACCESS_DB = os.environ["REDIS_ACCESS_DB"]
-REDIS_ML_DB = os.environ.get("REDIS_ML_DB", "3")
-
-MASTER_ACCESS_TOKEN = os.environ["MASTER_ACCESS_TOKEN"]
-
 TRACK_VOTING_DB = os.environ["TRACK_VOTING_DB"]
 
 PORT = os.environ["PORT"]

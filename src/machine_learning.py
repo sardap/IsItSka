@@ -31,15 +31,15 @@ from datetime import datetime
 from multiprocessing import Process, JoinableQueue
 from threading import Semaphore, Thread
 
-from env import API_AUTH, SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH, REDIS_ML_DB, REDIS_IP, REDIS_PORT, NOT_SKA_PLAYLIST
-from spotify_helper import get_playlist_tracks, get_features_for_tracks
+from env import SOURCE_PLAYLIST, SKA_PLAYLIST, CLF_FOLDER_PATH
+from spotify_helper import get_playlist_tracks, get_features_for_tracks, get_ska_playlist
 
 
 FEATURES = [
     "beats"
 ]
 
-_loaded_clfs = []
+_loaded_clf = None
 
 
 class ClfInfo():
@@ -116,7 +116,7 @@ def string_to_bytes(complete_track, key, other_key, n, redis_connection=None):
 def get_ml_features(
     complete_track,
     feature_set,
-    ska_tracks,
+    ska_tracks=None,
 ):
     result = {}
 
@@ -181,20 +181,18 @@ def gen_classifier(clf_gen, target_var, df, features):
 
 
 def _is_it_ska(
-        clf=tree.DecisionTreeClassifier(),
-        length_dict=[],
-        feature_set=[],
-        track_id=""
+        feature_set,
+        track_id,
+        clf,
 ):
     track_complete = {
         "id": track_id,
-        "analysis": get_analysis_for_track(track_id)
+        "features": get_features_for_tracks([{'id': track_id}])[0]
     }
 
     ml_set = get_ml_features(
         complete_track=track_complete,
         feature_set=feature_set,
-        length_dict=length_dict
     )
 
     cols = list(ml_set.keys())
@@ -206,23 +204,13 @@ def _is_it_ska(
 
 
 def ska_prob(track_id):
-    prop_sum = 0
+    clfInfo = _loaded_clf
 
-    while len(_loaded_clfs) == 0:
-        time.sleep(0.5)
-
-    clfInfo = _loaded_clfs[0]
-    ska_prob = list(_is_it_ska(
+    return _is_it_ska(
         clf=clfInfo.clf,
-        length_dict=clfInfo.length_dict,
         feature_set=clfInfo.feature_set,
         track_id=track_id
-    ))[0]
-    return ska_prob[1]
-
-    prop_sum += ska_prob[1]
-
-    return prop_sum / len(_loaded_clfs)
+    )[0][1]
 
 
 def get_track_data():
@@ -230,9 +218,7 @@ def get_track_data():
         playlist_id=SOURCE_PLAYLIST
     )
 
-    ska_tracks = get_playlist_tracks(
-        playlist_id=SKA_PLAYLIST
-    )
+    ska_tracks = get_ska_playlist()
 
     track_features = get_features_for_tracks(
         tracks=training_tracks
@@ -308,16 +294,44 @@ def create_clf(
     toDump.clf = clf
     toDump.feature_set = feature_set
 
-    name = 'clf/{}_clf_{}.bin'.format(
-        int(acc * 1000),
-        '_'.join(feature_set))
-
     dump = pickle.dumps(toDump)
 
-    return dump, name, acc
+    return dump, "clf.bin", acc
 
 
-def create_all_clf():
+def get_top_x_clf(x, percent=False):
+    ratings = []
+
+    target_floder = CLF_FOLDER_PATH
+
+    for filename in os.listdir(target_floder):
+        ratings.append({
+            "rating": int(filename[:3]),
+            "filename": "{}/{}".format(target_floder, filename)
+        })
+
+    ratings.sort(key=lambda x: x["rating"], reverse=True)
+
+    if percent:
+        length = int(len(ratings) * x)
+    else:
+        length = x
+    return ratings[:min(length, len(ratings))]
+
+
+def load_clf():
+
+    full_path = os.path.join(CLF_FOLDER_PATH, "clf.bin")
+
+    if not os.path.isfile(full_path):
+        return None
+
+    clfInfo = pickle.load(open(full_path, 'rb'))
+
+    return clfInfo
+
+
+def create_fresh_clf():
     tracks_complete, ska_tracks = get_track_data()
 
     tracks_complete_dump = json.dumps(tracks_complete)
@@ -347,78 +361,17 @@ def create_all_clf():
 
     print("created new CLF with acc:{}".format(acc))
 
-    with open(name, "wb") as f:
+    with open(os.path.join(CLF_FOLDER_PATH, name), "wb") as f:
         f.write(dump)
 
-
-def get_top_x_clf(x, percent=False):
-    ratings = []
-
-    target_floder = CLF_FOLDER_PATH
-
-    for filename in os.listdir(target_floder):
-        ratings.append({
-            "rating": int(filename[:3]),
-            "filename": "{}/{}".format(target_floder, filename)
-        })
-
-    ratings.sort(key=lambda x: x["rating"], reverse=True)
-
-    if percent:
-        length = int(len(ratings) * x)
-    else:
-        length = x
-    return ratings[:min(length, len(ratings))]
+    return load_clf()
 
 
-def load_clfs():
+def init_clf():
+    global _loaded_clf
 
-    _loaded_clfs.clear()
+    clf = load_clf()
+    if clf == None:
+        clf = create_fresh_clf()
 
-    clfs_filenames = get_top_x_clf(5, percent=False)
-
-    for to_load in clfs_filenames:
-        _loaded_clfs.append(
-            pickle.load(open(to_load["filename"], 'rb'))
-        )
-
-    if len(_loaded_clfs) == 0:
-        raise Exception("No Clf loaded")
-
-
-def recreate_best_clf():
-    result = False
-
-    tracks_complete, ska_tracks = get_track_data()
-
-    clfs_filenames = get_top_x_clf(1, percent=True)
-
-    for clfInfo in _loaded_clfs:
-        dump, name, acc = create_clf(
-            tracks_complete=tracks_complete,
-            ska_tracks=ska_tracks,
-            feature_set=clfInfo.feature_set,
-            length_dict=clfInfo.length_dict,
-            use_pipeline=False
-        )
-
-        file_info = clfs_filenames[_loaded_clfs.index(clfInfo)]
-        old_acc = file_info["rating"]
-
-        print("Acc:{} old Acc:{}".format(acc * 1000, old_acc))
-
-        if acc * 1000 > old_acc + 1:
-            os.remove(file_info["filename"])
-
-            with open(name, "wb") as f:
-                f.write(dump)
-
-            print("new model is better than old model")
-            result = True
-
-    return result
-
-
-def create_fresh_clf():
-
-    create_all_clf()
+    _loaded_clf = clf
