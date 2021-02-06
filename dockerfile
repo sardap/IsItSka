@@ -32,4 +32,4 @@ ENV PORT 80
 
 EXPOSE 80
 
-CMD [ "python3", "startup.py" ]
+CMD [ "waitress-serve", "--port=80", "--call", "app.py" ]
