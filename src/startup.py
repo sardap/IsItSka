@@ -9,10 +9,8 @@ from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file
 from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError, Optional, NumberRange
 
-from ml_new import start_ml
-from spotify_helper import find_track, get_track, spotify_helper_init, get_playlist_tracks, get_playlist_by_name
-from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker, get_feature_score
-from track_update import track_updater_worker, add_track_update, init_track_update
+from spotify_helper import get_spotipy_client, find_track, get_playlist_tracks
+from machine_learning import ska_prob, load_clfs, create_fresh_clf
 from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, MASTER_ACCESS_TOKEN, PORT, SKA_PLAYLIST
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
@@ -118,9 +116,10 @@ def ska_prob_endpoint():
 
     if len(form.track_name.data) > 0:
         track_info = find_track(
-            form.track_name.data,
-            artist_name=artist_name
-        )
+            track_name=form.track_name.data,
+            artist_name=artist_name)
+
+    # artist_name=artist_name
     else:
         track_id = form.track_id.data
         if not re.match("^[a-zA-Z0-9_]+$", track_id):
@@ -128,7 +127,7 @@ def ska_prob_endpoint():
             if len(track_id.split("?")) > 0:
                 track_id = track_id.split("?")[0]
 
-        track_info = get_track(track_id)
+        track_info = get_spotipy_client().track(track_id)
 
     if track_info == None:
         return make_response(
@@ -155,14 +154,13 @@ def some_ska_endpoint():
             400
         )
 
-    play_id, n = get_playlist_by_name(SKA_PLAYLIST)
-    tracks_ids = get_playlist_tracks(play_id=play_id, n=n)
+    tracks_ids = get_playlist_tracks(SKA_PLAYLIST)
 
     random.shuffle(tracks_ids)
 
     tracks = []
     for track_id in tracks_ids[:form.n.data]:
-        tracks.append(to_track_out(get_track(track_id)))
+        tracks.append(to_track_out(get_spotipy_client().track(track_id)))
 
     return make_response(
         jsonify({
@@ -174,29 +172,7 @@ def some_ska_endpoint():
 
 @app.route("/api/correction", methods=["POST"])
 def ska_correction_endpoint():
-    form = SkaCorrectionForm(request.form)
-
-    if not form.validate():
-        return make_response(
-            jsonify({
-
-                "error": form.errors
-            }),
-            400
-        )
-
-    add_track_update(
-        track_id=form.track_id.data,
-        is_ska=form.ska.data,
-        ip_address=request.remote_addr
-    )
-
-    return make_response(
-        jsonify({
-            "result": "success"
-        }),
-        200
-    )
+    return {}, 500
 
 
 @app.route('/', defaults={'path': ''})
@@ -209,22 +185,21 @@ def default_path_endpoint(path):
 
 
 def main():
-    spotify_helper_init()
-    start_ml()
+    create_fresh_clf()
     return
-    print("starting server")
-    print("Loading classfiers")
-    load_clfs()
-    print("initalsing track updater")
-    init_track_update()
-    print("starting Track workers")
-    Thread(target=track_updater_worker).start()
-    print("staring clf refresher")
-    # Thread(target=clf_refresher_worker).start()
+    # print("starting server")
+    # print("Loading classfiers")
+    # load_clfs()
+    # print("initalsing track updater")
+    # init_track_update()
+    # print("starting Track workers")
+    # Thread(target=track_updater_worker).start()
+    # print("staring clf refresher")
+    # # Thread(target=clf_refresher_worker).start()
 
-    print("starting webserver")
-    app.run(host="0.0.0.0", port=PORT, threaded=True)
-    # serve(app, host="0.0.0.0", port=PORT)
+    # print("starting webserver")
+    # app.run(host="0.0.0.0", port=PORT, threaded=True)
+    # # serve(app, host="0.0.0.0", port=PORT)
 
 
 if __name__ == "__main__":

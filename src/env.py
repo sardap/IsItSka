@@ -7,15 +7,8 @@ SOURCE_PLAYLIST = os.environ["SOURCE_PLAYLIST"]
 
 API_AUTH = os.environ["API_AUTH"]
 
-
-def get_refresh_token():
-    tmp = os.environ["REFRESH_TOKEN"]
-    tmp_encoded = tmp.encode("utf-8")
-    tmp_bytes = base64.b64decode(tmp_encoded)
-    return tmp_bytes.decode("utf-8")
-
-
-REFRESH_TOKEN = get_refresh_token()
+CLIENT_ID = os.environ["CLIENT_ID"]
+CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 
 CLF_FOLDER_PATH = os.environ["CLF_FOLDER_PATH"]
 STATIC_FILE_PATH = os.environ["STATIC_FILE_PATH"]

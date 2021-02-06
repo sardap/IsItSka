@@ -6,7 +6,9 @@
 		"llen",
 		"rconn",
 		"rpush",
+		"sklearn",
 		"spotify",
+		"spotipy",
 		"urandom"
 	]
 }
