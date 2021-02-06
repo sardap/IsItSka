@@ -11,7 +11,7 @@ from wtforms.validators import DataRequired, ValidationError, Optional, NumberRa
 
 from spotify_helper import get_spotipy_client, find_track, get_playlist_tracks, get_ska_playlist
 from machine_learning import ska_prob, init_clf
-from env import STATIC_FILE_PATH, REDIS_IP, REDIS_PORT, REDIS_ACCESS_DB, PORT, SKA_PLAYLIST
+from env import STATIC_FILE_PATH, PORT, SKA_PLAYLIST
 
 app = Flask(__name__, static_folder=STATIC_FILE_PATH)
 
@@ -183,7 +183,7 @@ def default_path_endpoint(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 
+init_clf()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
-
-init_clf()

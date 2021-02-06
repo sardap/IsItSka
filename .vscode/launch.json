@@ -16,7 +16,7 @@
 			}
 		},
 		{
-			"name": "start Melonscarper",
+			"name": "start is it ska?",
 			"type": "python",
 			"request": "launch",
 			"module": "flask",
