@@ -183,7 +183,7 @@ def default_path_endpoint(path):
         return send_from_directory(app.static_folder, 'index.html')
 
 
+init_clf()
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, threaded=True)
-
-init_clf()
