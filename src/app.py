@@ -8,6 +8,7 @@ from threading import Thread, BoundedSemaphore
 from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file, make_response, send_from_directory
 from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError, Optional, NumberRange
+from waitress import serve
 
 from spotify_helper import get_spotipy_client, find_track, get_playlist_tracks, get_ska_playlist
 from machine_learning import ska_prob, init_clf
@@ -186,4 +187,4 @@ def default_path_endpoint(path):
 init_clf()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT, threaded=True)
+    serve(app, host='0.0.0.0', port=PORT)

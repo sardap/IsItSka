@@ -5,14 +5,15 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Python: Current File",
+			"name": "Waitress",
 			"type": "python",
 			"request": "launch",
-			"program": "${workspaceFolder}/src/startup.py",
+			"program": "${workspaceFolder}/src/app.py",
 			"console": "integratedTerminal",
 			"envFile": "${workspaceFolder}/.env",
 			"env": {
-				"STATIC_FILE_PATH": "${workspaceFolder}/frontend/build"
+				"STATIC_FILE_PATH": "${workspaceFolder}/frontend/build",
+				"CLF_FOLDER_PATH": "${workspaceFolder}/clf"
 			}
 		},
 		{
