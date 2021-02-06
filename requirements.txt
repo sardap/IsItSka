@@ -37,3 +37,5 @@ sklearn == 0.0
 
 # C:\Users\pfsar\OneDrive\Documents\GitHub\IsItSka\src\startup.py: 7
 waitress == 1.4.3
+
+tensorflow

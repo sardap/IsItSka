@@ -9,6 +9,7 @@ from flask import Flask, Blueprint, request, Response, abort, jsonify, send_file
 from wtforms import Form, IntegerField, StringField, BooleanField
 from wtforms.validators import DataRequired, ValidationError, Optional, NumberRange
 
+from ml_new import start_ml
 from spotify_helper import find_track, get_track, spotify_helper_init, get_playlist_tracks, get_playlist_by_name
 from machine_learning import ska_prob, load_clfs, ClfInfo, transform, avg_value, create_fresh_clf, clf_refresher_worker, get_feature_score
 from track_update import track_updater_worker, add_track_update, init_track_update
@@ -199,8 +200,10 @@ def default_path_endpoint(path):
 		return send_from_directory(app.static_folder, 'index.html')
 
 def main():
-	print("starting server")
 	spotify_helper_init()
+	start_ml()
+	return
+	print("starting server")
 	print("Loading classfiers")
 	load_clfs()
 	print("initalsing track updater")

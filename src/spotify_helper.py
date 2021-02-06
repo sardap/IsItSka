@@ -23,6 +23,7 @@ POST = "POST"
 PUT = "PUT"
 GET = "GET"
 DELETE = "DELETE"
+SECONDS_YEAR = 365 * 24 * 60 * 60
 SECONDS_WEEK = 7 * 24 * 60 * 60
 SECONDS_HOUR = 60 * 60
 
@@ -102,50 +103,41 @@ def get_header(access_token=None):
 	}
 
 def make_request(
-	url,
-	method="GET",
-	headers=None,
-	payload="",
-	backoff=DEFAULT_BACKOFF,
-	params={},
-	calls=0
+	url, method="GET", headers=None, payload="", 
+	backoff=DEFAULT_BACKOFF, params={}, calls=0, 
+	expire_time_secs=None
 ):
 	if(headers == None):
 		headers = get_header()
+
+	if expire_time_secs != None:
+		headers["easy_cache_expire_second"] = str(expire_time_secs)
+	else:
+		headers["easy_cache_expire_second"] = "31536000"
 
 	if(calls > 7):
 		print("Too many backoffs")
 		return None
 
+	url_complete = "%s/%s" % ("http://140.140.140.30:8080/https://api.spotify.com", url)
 	_request_sem.acquire()
 	try:
-		response = requests.request(
-			method,
-			url,
-			data=payload,
-			headers=headers,
-			timeout=None,
-			params=params
-		)
+		response = requests.request(method, url_complete, 
+			data=payload, headers=headers, timeout=60, params=params)
 	finally:
 		_request_sem.release()
 
 	if response.status_code > 500 and response.status_code < 599:
 		print(
 			"Code {} trying again in {} Error {}".format(
-				response.status_code,
-				backoff,
-				response.text
+				response.status_code, backoff, response.text
 			)
 		)
 		time.sleep(backoff)
 		return make_request(
-			url=url,
-			method=method,
-			headers=headers,
-			payload=payload,
-			backoff=backoff * 2,
-			calls=calls + 1
+			url=url, method=method, headers=headers, 
+			payload=payload, backoff=backoff * 2, calls=calls + 1,
+			expire_time_secs=expire_time_secs,
 		)
 	
 	if response.status_code >= 400 and response.status_code <= 499:
@@ -183,8 +175,7 @@ def get_or_fetch(url, key, expire_time_secs=None):
 	if cache_result != None:
 		return cache_result
 
-	# time.sleep(random.randint(0, 100))
-	response = make_request(url)
+	response = make_request(url, expire_time_secs=expire_time_secs)
 	
 	if(response == None):
 		print("failled to get")
@@ -192,11 +183,11 @@ def get_or_fetch(url, key, expire_time_secs=None):
 
 	result = json.loads(response.text)
 
-	update_cache(
-		key=key,
-		value=result,
-		ex=expire_time_secs,
-	)
+	# update_cache(
+	# 	key=key,
+	# 	value=result,
+	# 	ex=expire_time_secs,
+	# )
 
 	return result
 
@@ -208,7 +199,7 @@ def get_access_token_request(api_auth, refresh_token):
 		'Authorization': 'Basic %s' % api_auth, 
 		'Content-Type': 'application/x-www-form-urlencoded'
 	}
-	response = make_request(url, method=POST, headers=headers)
+	response = requests.request(url=url, method=POST, headers=headers)
 
 	response_json = json.loads(response.text)
 
@@ -221,9 +212,9 @@ def get_access_token_request(api_auth, refresh_token):
 	return response_json["access_token"], expire_time
 
 def get_track_features(track_id=None):
-	url = "https://api.spotify.com/v1/audio-features/" + track_id
+	url = "v1/audio-features/" + track_id
 	key = "feature:{}".format(track_id)
-	return get_or_fetch(key=key, url=url, expire_time_secs=SECONDS_WEEK)
+	return get_or_fetch(key=key, url=url, expire_time_secs=SECONDS_YEAR)
 
 def get_playlist_tracks(play_name=None, play_id=None, n=None):
 
@@ -237,7 +228,7 @@ def get_playlist_tracks(play_name=None, play_id=None, n=None):
 	result = []
 
 	while(offset < n):
-		url = "https://api.spotify.com/v1/playlists/{}/tracks?tracks=100&fields=items(track(id))&offset={}".format(play_id, offset)
+		url = "v1/playlists/{}/tracks?tracks=100&fields=items(track(id))&offset={}".format(play_id, offset)
 		key = "playlist:{}".format(url)
 		response = get_or_fetch(url, key, expire_time_secs=2 * 60)
 		offset += 100
@@ -251,7 +242,7 @@ def get_playlist_tracks(play_name=None, play_id=None, n=None):
 def get_playlist_by_name(name):
 	print("Getting playlist named {}".format(name))
 
-	url = "https://api.spotify.com/v1/me/playlists"
+	url = "v1/me/playlists"
 	key = "playlist_name:{}".format(url)
 	response = get_or_fetch(url, key, expire_time_secs=2 * 60)
 
@@ -267,23 +258,23 @@ def get_playlist_by_name(name):
 
 def add_song_to_queue(track_id=None):
 	track_uri = "spotify:track:{}".format(track_id)
-	url = "https://api.spotify.com/v1/me/player/queue?uri=%s" % track_uri
+	url = "v1/me/player/queue?uri=%s" % track_uri
 	response = make_request(url, method=POST)
 
 def play_song():
-	url = "https://api.spotify.com/v1/me/player/play"
+	url = "v1/me/player/play"
 	make_request(url, method=PUT)
 
 def pause_song():
-	url = "https://api.spotify.com/v1/me/player/pause"
+	url = "v1/me/player/pause"
 	make_request(url, method=PUT)
 
 def skip_song():
-	url = "https://api.spotify.com/v1/me/player/next"
+	url = "v1/me/player/next"
 	response = make_request(url, method=POST)
 
 def currently_playing(retry_until_playing=True):
-	url = "https://api.spotify.com/v1/me/player/currently-playing"
+	url = "v1/me/player/currently-playing"
 	response = make_request(url)
 
 	if response.status_code == 204 and retry_until_playing:
@@ -303,7 +294,7 @@ def skip_until_song(track_id=None, max_tries=2):
 		time.sleep(0.5)
 		i += 1
 
-def get_features_for_tracks(tracks=[]):
+def get_features_for_tracks(tracks):
 	result = []
 
 	for i in range(0, len(tracks)):
@@ -313,12 +304,12 @@ def get_features_for_tracks(tracks=[]):
 	print_progress_bar(i, len(tracks), prefix="Getting track features")
 	return result
 
-def get_analysis_for_track(track_id=None):
+def get_analysis_for_track(track_id):
 	key = "analysis:{}".format(track_id)
-	url = "https://api.spotify.com/v1/audio-analysis/{}".format(track_id)
-	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
+	url = "v1/audio-analysis/{}".format(track_id)
+	return get_or_fetch(url, key, expire_time_secs=SECONDS_YEAR)
 
-def get_analysis_for_tracks(tracks=None):
+def get_analysis_for_tracks(tracks):
 	result = []
 
 	for i in range(0, len(tracks)):
@@ -335,17 +326,17 @@ def get_track(track_id):
 	track_id = urllib.parse.quote(track_id)
 
 	key = "track:{}".format(track_id)
-	url = "https://api.spotify.com/v1/tracks/{}".format(track_id)
+	url = "v1/tracks/{}".format(track_id)
 	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_album(album_id=""):
 	key = "album:{}".format(album_id)
-	url = "https://api.spotify.com/v1/albums/{}".format(album_id)
+	url = "v1/albums/{}".format(album_id)
 	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_artist(artist_id=""):
 	key = "artist:{}".format(artist_id)
-	url = "https://api.spotify.com/v1/artists/{}".format(artist_id)
+	url = "v1/artists/{}".format(artist_id)
 	return get_or_fetch(url, key, expire_time_secs=SECONDS_WEEK)
 
 def get_genres_for_track(track_id=""):
@@ -364,7 +355,7 @@ def get_genres_for_track(track_id=""):
 	return genres
 
 def add_tracks_to_playlist(playlist_id, tracks):
-	url = "https://api.spotify.com/v1/playlists/{}/tracks".format(playlist_id)
+	url = "v1/playlists/{}/tracks".format(playlist_id)
 
 	for i in range(0, len(tracks), 100):
 		payload = {
@@ -379,7 +370,7 @@ def add_track_to_playlist(playlist_id, track_id):
 	)
 
 def search(search_query, search_type="track", offset=0):
-	url = "https://api.spotify.com/v1/search"
+	url = "v1/search"
 	parmas = {
 		"q" : search_query,
 		"type" : search_type,
@@ -449,7 +440,7 @@ def find_track(track_name, artist_name=None):
 	return result
 
 def remove_tracks_from_playlist(playlist_id, tracks):
-	url = "https://api.spotify.com/v1/playlists/{}/tracks".format(
+	url = "v1/playlists/{}/tracks".format(
 		urllib.parse.quote(playlist_id)
 	)
 
@@ -472,7 +463,7 @@ def remove_track_from_playlist(playlist_id, track_id):
 
 
 def spotify_helper_init():
-	init_cache()
+	# init_cache()
 
 	set_login(
 		api_auth=API_AUTH,

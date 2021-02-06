@@ -21,3 +21,5 @@ data/
 docker.env
 
 docker-compose.yaml
+
+datasets/
