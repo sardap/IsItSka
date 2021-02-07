@@ -5,9 +5,9 @@ It's a website that let's you check if a song is ska by using buzzwords.
 
 No really how? 
 
-Using the spotify web api to get audio features (temp, etc) then training a ML classifier to identify ska music using said features. 
+Using the Spotify web api to get audio features (temp, etc) then training a ML classifier to identify ska music using said features. 
 
-I have chosen to not make the playlists I used to train public mostly out of shame of my spotify account music taste.
+I have chosen to not make the playlists I used to train public mostly out of shame of my Spotify account music taste.
 
 ## Running
 
