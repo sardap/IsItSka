@@ -11,4 +11,4 @@ redis == 3.5.3
 requests == 2.23.0
 sklearn == 0.0
 waitress == 2.1.1
-spotipy == 2.16.1
+spotipy == 2.22.1
