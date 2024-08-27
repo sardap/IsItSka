@@ -10,5 +10,5 @@ pandas == 1.0.3
 redis == 3.5.3
 requests == 2.32.2
 sklearn == 0.0
-waitress == 2.1.1
+waitress == 2.1.2
 spotipy == 2.22.1
